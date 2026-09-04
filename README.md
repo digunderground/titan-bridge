@@ -21,6 +21,7 @@ Settings → General → Serial Port Control. Everything here is built on that.
 | wiring | [`docs/03-wiring.md`](docs/03-wiring.md) · [`hardware/wiring.svg`](hardware/wiring.svg) |
 | flashing | [`docs/04-flashing.md`](docs/04-flashing.md) |
 | mapping menus on Sunday | [`docs/05-menu-mapping-worksheet.md`](docs/05-menu-mapping-worksheet.md) |
+| holding a USB keyboard and impatient | [`docs/10-hid-key-probe.md`](docs/10-hid-key-probe.md) |
 | looking up a command | [`docs/06-command-reference.md`](docs/06-command-reference.md) |
 | stuck | [`docs/07-troubleshooting.md`](docs/07-troubleshooting.md) |
 | wiring up the hub or Home Assistant | [`docs/08-integration.md`](docs/08-integration.md) |

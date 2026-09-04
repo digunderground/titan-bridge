@@ -54,6 +54,37 @@ you ask for, rather than failing to build. Asking for *only* that channel on
 such a board is a compile error, because the result would be a bridge with no
 way to reach the projector.
 
+### Building
+
+`BOARD` can be set from the command line instead of edited into `config.h`,
+which is what makes it cheap to check that a change still builds everywhere.
+Verified against esp32 core **3.3.11**:
+
+```bash
+cd firmware
+A=~/.local/bin/arduino-cli
+
+# classic ESP32 — the expendable first attempt
+$A compile --fqbn esp32:esp32:esp32 \
+   --build-property compiler.cpp.extra_flags=-DBOARD=3 titan_bridge_p2
+
+# Heltec WiFi LoRa 32 V3
+$A compile --fqbn esp32:esp32:heltec_wifi_lora_32_V3 \
+   --build-property compiler.cpp.extra_flags=-DBOARD=2 titan_bridge_p2
+
+# the eventual target
+$A compile --fqbn esp32:esp32:esp32s3 \
+   --build-property compiler.cpp.extra_flags=-DBOARD=1 titan_bridge_p2
+```
+
+Add `--upload -p /dev/tty.usbserial-XXXX` to flash. Find the port with
+`$A board list`, or `ls /dev/tty.*` before and after plugging the board in.
+
+Watch the size line on the **DevKitC** build: it lands at 81% of a 1.31 MB app
+partition, because that profile compiles the native-USB stack in as well. There
+is room, but not room to be careless with — if a future addition overflows it,
+the partition scheme is the knob, not the feature.
+
 ### Heltec WiFi LoRa 32 V3/V4
 
 It is an ESP32-S3, so the silicon has a native USB device port — but the USB-C
