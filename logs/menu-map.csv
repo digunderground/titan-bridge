@@ -1,0 +1,6 @@
+feature,projector_firmware,date,entry_anchor,keypress_path,end_state,min_delay_ms,exit_path,macro_script,verified
+3D mode on,,,anchor,,,,,,no
+3D mode off,,,anchor,,,,,,no
+Lens memory recall 1,,,anchor,,,,,,no
+Iris level,,,anchor,,,,,,no
+Keystone reset,,,anchor,,,,,,no

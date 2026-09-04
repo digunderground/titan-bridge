@@ -1,0 +1,4 @@
+# titan_serial.py
+pyserial>=3.5
+
+# ecp_probe.py uses the standard library only.

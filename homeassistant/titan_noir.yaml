@@ -1,0 +1,277 @@
+# ===========================================================================
+# titan_noir.yaml — Home Assistant package for the TITAN Noir bridge.
+#
+# Install:
+#   1. mkdir -p config/packages
+#   2. copy this file into it
+#   3. in configuration.yaml:
+#          homeassistant:
+#            packages: !include_dir_named packages
+#   4. change TITAN_HOST below (three places: rest_command, rest, and nothing
+#      else — search for titan-bridge.local)
+#   5. restart
+#
+# No MQTT, no custom component, no HACS. The bridge's REST API is all this
+# needs, and the bridge answers it whether or not Home Assistant is running.
+#
+# Pin a DHCP reservation for the bridge. mDNS works but adds a resolution step
+# that occasionally times out on restart; an IP does not.
+# ===========================================================================
+
+rest_command:
+  titan_cmd:
+    url: "http://titan-bridge.local/api/cmd?name={{ name }}"
+    method: POST
+  titan_key:
+    url: "http://titan-bridge.local/api/key?name={{ name }}"
+    method: POST
+  titan_hid:
+    url: "http://titan-bridge.local/api/hid?key={{ key }}"
+    method: POST
+  titan_macro:
+    url: "http://titan-bridge.local/api/macro?name={{ name }}"
+    method: POST
+  titan_script:
+    url: "http://titan-bridge.local/api/macro?script={{ script | urlencode }}"
+    method: POST
+  titan_power:
+    url: "http://titan-bridge.local/api/power?state={{ state }}"
+    method: POST
+  titan_raw:
+    url: "http://titan-bridge.local/api/raw?hex={{ hex | urlencode }}"
+    method: POST
+
+# --------------------------------------------------------------------------
+# One poll, several entities. 15 s is well inside the bridge's own 10 s
+# liveness cadence, so state never lags by more than a poll.
+# --------------------------------------------------------------------------
+rest:
+  - resource: "http://titan-bridge.local/api/status"
+    scan_interval: 15
+    timeout: 5
+    sensor:
+      - name: "Titan power state"
+        unique_id: titan_power_state
+        value_template: "{{ value_json.power }}"
+        icon: mdi:projector
+
+      - name: "Titan temperature status"
+        unique_id: titan_temp_status
+        value_template: "{{ value_json.temp }}"
+        icon: mdi:thermometer
+
+      - name: "Titan last reply"
+        unique_id: titan_last_reply
+        value_template: >-
+          {{ (value_json.since / 1000) | round(1) if value_json.since >= 0 else 'never' }}
+        unit_of_measurement: s
+        icon: mdi:timer-outline
+
+      - name: "Titan brightness level"
+        unique_id: titan_brightness
+        value_template: "{{ value_json.brightness }}"
+        icon: mdi:brightness-6
+
+      - name: "Titan bridge uptime"
+        unique_id: titan_uptime
+        value_template: "{{ value_json.uptime }}"
+        unit_of_measurement: s
+        entity_category: diagnostic
+        icon: mdi:clock-outline
+
+      - name: "Titan bridge firmware"
+        unique_id: titan_fw
+        value_template: "{{ value_json.fw }}"
+        entity_category: diagnostic
+
+      - name: "Titan serial link"
+        unique_id: titan_link
+        value_template: "{{ value_json.link }}"
+        entity_category: diagnostic
+
+    binary_sensor:
+      # The one thing here worth an actual alert.
+      - name: "Titan over temperature"
+        unique_id: titan_overtemp
+        device_class: problem
+        value_template: >-
+          {{ 'warning' in value_json.temp or 'shutdown' in value_json.temp
+             or 'abnormal' in value_json.temp }}
+
+      - name: "Titan serial port bound"
+        unique_id: titan_cdc_bound
+        device_class: connectivity
+        entity_category: diagnostic
+        value_template: "{{ value_json.cdc }}"
+
+# --------------------------------------------------------------------------
+# Power. Both directions are idempotent on the bridge, so repeated calls are
+# harmless and the switch cannot get out of step with reality for longer than
+# one poll.
+# --------------------------------------------------------------------------
+switch:
+  - platform: template
+    switches:
+      titan_projector:
+        unique_id: titan_projector_power
+        friendly_name: "TITAN Noir"
+        icon_template: mdi:projector
+        value_template: "{{ is_state('sensor.titan_power_state', 'awake') }}"
+        availability_template: >-
+          {{ not is_state('sensor.titan_power_state', 'unavailable') }}
+        turn_on:
+          service: rest_command.titan_power
+          data: { state: "on" }
+        turn_off:
+          service: rest_command.titan_power
+          data: { state: "off" }
+
+template:
+  - select:
+      - name: "Titan input"
+        unique_id: titan_input
+        # The projector cannot be asked which input it is on, so this is
+        # write-only: it remembers what it last selected. Do not trust it after
+        # someone uses the projector's own remote.
+        state: "{{ states('input_select.titan_input_shadow') | default('HDMI1') }}"
+        options: "{{ ['HDMI1', 'HDMI2', 'HDMI3', 'USB'] }}"
+        select_option:
+          - service: rest_command.titan_cmd
+            data:
+              name: >-
+                {{ {'HDMI1':'hdmi1','HDMI2':'hdmi2','HDMI3':'hdmi3','USB':'usbsrc'}[option] }}
+          - service: input_select.select_option
+            target: { entity_id: input_select.titan_input_shadow }
+            data: { option: "{{ option }}" }
+
+      - name: "Titan picture mode"
+        unique_id: titan_picture_mode
+        state: "{{ states('input_select.titan_picture_shadow') | default('Filmmaker') }}"
+        options: "{{ ['Filmmaker', 'Movie', 'IMAX', 'Vivid', 'Performance', 'Sport', 'TV'] }}"
+        select_option:
+          - service: rest_command.titan_cmd
+            data:
+              name: >-
+                {{ {'Filmmaker':'filmmaker','Movie':'movie','IMAX':'imax','Vivid':'vivid',
+                    'Performance':'perf','Sport':'sport','TV':'tvmode'}[option] }}
+          - service: input_select.select_option
+            target: { entity_id: input_select.titan_picture_shadow }
+            data: { option: "{{ option }}" }
+
+  - button:
+      - name: "Titan autofocus"
+        unique_id: titan_autofocus
+        icon: mdi:image-filter-center-focus
+        press:
+          service: rest_command.titan_cmd
+          data: { name: autofocus }
+
+      - name: "Titan blank screen"
+        unique_id: titan_blank
+        icon: mdi:monitor-off
+        press:
+          service: rest_command.titan_cmd
+          data: { name: blank }
+
+      - name: "Titan unblank screen"
+        unique_id: titan_unblank
+        icon: mdi:monitor
+        press:
+          service: rest_command.titan_cmd
+          data: { name: unblank }
+
+      - name: "Titan menu key"
+        unique_id: titan_menu_key
+        icon: mdi:menu
+        # HID only — there is no serial equivalent for this key.
+        press:
+          service: rest_command.titan_hid
+          data: { key: menu }
+
+# Shadow state for the write-only selects above.
+input_select:
+  titan_input_shadow:
+    name: Titan input (shadow)
+    options: [HDMI1, HDMI2, HDMI3, USB]
+    initial: HDMI1
+    icon: mdi:hdmi-port
+  titan_picture_shadow:
+    name: Titan picture mode (shadow)
+    options: [Filmmaker, Movie, IMAX, Vivid, Performance, Sport, TV]
+    initial: Filmmaker
+    icon: mdi:image-multiple
+
+# --------------------------------------------------------------------------
+# Macros. Each of these runs on the bridge, not here, so timing is exact and
+# they still work if Home Assistant is down.
+# --------------------------------------------------------------------------
+script:
+  titan_movie_night:
+    alias: "TITAN: movie night"
+    icon: mdi:movie-open
+    sequence:
+      - service: rest_command.titan_macro
+        data: { name: movie }
+
+  titan_daytime:
+    alias: "TITAN: daytime"
+    icon: mdi:white-balance-sunny
+    sequence:
+      - service: rest_command.titan_macro
+        data: { name: bright }
+
+  titan_game_mode:
+    alias: "TITAN: game mode"
+    icon: mdi:gamepad-variant
+    sequence:
+      - service: rest_command.titan_macro
+        data: { name: game }
+
+  titan_brightness:
+    alias: "TITAN: set brightness level"
+    icon: mdi:brightness-6
+    fields:
+      level:
+        description: "1 to 10"
+        example: 7
+        selector: { number: { min: 1, max: 10 } }
+    sequence:
+      - service: rest_command.titan_cmd
+        data: { name: "b{{ level | int }}" }
+
+# --------------------------------------------------------------------------
+# The bridge already logs a high-temperature postback. This is the version that
+# reaches your phone.
+# --------------------------------------------------------------------------
+automation:
+  - id: titan_overtemp_alert
+    alias: "TITAN: over-temperature alert"
+    mode: single
+    trigger:
+      - platform: state
+        entity_id: binary_sensor.titan_over_temperature
+        to: "on"
+        for: "00:00:30"
+    action:
+      - service: persistent_notification.create
+        data:
+          title: "Projector temperature warning"
+          message: >-
+            The TITAN reported: {{ states('sensor.titan_temperature_status') }}.
+            Check the intake and exhaust before the next session.
+
+  - id: titan_bridge_unreachable
+    alias: "TITAN: bridge unreachable"
+    mode: single
+    trigger:
+      - platform: state
+        entity_id: sensor.titan_power_state
+        to: "unavailable"
+        for: "00:05:00"
+    action:
+      - service: persistent_notification.create
+        data:
+          title: "Titan bridge offline"
+          message: >-
+            No answer from the bridge for five minutes. Check its power supply
+            and Wi-Fi; the projector itself is unaffected.

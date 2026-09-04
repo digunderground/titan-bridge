@@ -1,0 +1,68 @@
+# Paste into a dashboard as a manual card (three-dot menu -> Edit -> Add card
+# -> Manual). Assumes the entity IDs created by titan_noir.yaml.
+type: vertical-stack
+cards:
+  - type: entities
+    title: TITAN Noir
+    show_header_toggle: false
+    entities:
+      - entity: switch.titan_projector
+        name: Power
+      - entity: sensor.titan_power_state
+        name: State
+      - entity: select.titan_input
+        name: Input
+      - entity: select.titan_picture_mode
+        name: Picture mode
+      - type: divider
+      - entity: sensor.titan_temperature_status
+        name: Temperature
+      - entity: sensor.titan_last_reply
+        name: Last reply
+
+  - type: grid
+    columns: 3
+    square: false
+    cards:
+      - type: button
+        name: Movie night
+        icon: mdi:movie-open
+        tap_action: { action: call-service, service: script.titan_movie_night }
+      - type: button
+        name: Daytime
+        icon: mdi:white-balance-sunny
+        tap_action: { action: call-service, service: script.titan_daytime }
+      - type: button
+        name: Game
+        icon: mdi:gamepad-variant
+        tap_action: { action: call-service, service: script.titan_game_mode }
+      - type: button
+        entity: button.titan_autofocus
+        name: Autofocus
+      - type: button
+        entity: button.titan_blank_screen
+        name: Blank
+      - type: button
+        entity: button.titan_unblank_screen
+        name: Unblank
+
+  - type: conditional
+    conditions:
+      - entity: binary_sensor.titan_over_temperature
+        state: "on"
+    card:
+      type: markdown
+      content: >-
+        ### ⚠ Projector temperature warning
+
+        Reported status: **{{ states('sensor.titan_temperature_status') }}**.
+        Check intake and exhaust.
+
+  - type: entities
+    title: Diagnostics
+    show_header_toggle: false
+    entities:
+      - entity: sensor.titan_serial_link
+      - entity: binary_sensor.titan_serial_port_bound
+      - entity: sensor.titan_bridge_firmware
+      - entity: sensor.titan_bridge_uptime

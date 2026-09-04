@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>XGIMI TITAN Noir Control Bridge — Build Set</title>
+<style>
+  :root {
+    --ink: #1a1a1a;
+    --muted: #555;
+    --accent: #1f4e79;
+    --accent-light: #bdd7ee;
+    --warn: #a85c00;
+    --warn-bg: #fff3e0;
+    --ok: #1f6f43;
+    --ok-bg: #eaf6ee;
+    --border: #ddd;
+    --bg: #fff;
+    --bg-alt: #fafafa;
+    --code-bg: #f4f4f4;
+  }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    color: var(--ink);
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 40px 24px 80px;
+    line-height: 1.55;
+    background: var(--bg);
+  }
+  h1, h2, h3 { color: var(--accent); line-height: 1.25; margin-top: 1.6em; }
+  h1 { font-size: 2.0em; border-bottom: 3px solid var(--accent); padding-bottom: 0.3em; margin-top: 0; }
+  h2 { font-size: 1.4em; border-bottom: 1px solid var(--border); padding-bottom: 0.2em; }
+  h3 { font-size: 1.15em; }
+  .subtitle { color: var(--muted); font-size: 1.05em; margin-top: -0.3em; }
+  .meta { color: var(--muted); font-size: 0.92em; margin-bottom: 1.5em; }
+  .callout { padding: 14px 18px; border-radius: 6px; margin: 16px 0; }
+  .callout.warn { background: var(--warn-bg); border-left: 4px solid var(--warn); }
+  .callout.info { background: #e8f0fa; border-left: 4px solid var(--accent); }
+  .callout.ok   { background: var(--ok-bg);  border-left: 4px solid var(--ok); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; margin: 20px 0; }
+  .card { border: 1px solid var(--border); border-radius: 6px; padding: 14px 16px; background: var(--bg-alt); }
+  .card a { color: var(--accent); text-decoration: none; font-weight: 600; }
+  .card a:hover { text-decoration: underline; }
+  .card-meta { color: var(--muted); font-size: 0.85em; margin-top: 4px; }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 0.94em; }
+  th, td { border: 1px solid var(--border); padding: 6px 10px; text-align: left; vertical-align: top; }
+  th { background: var(--accent); color: white; font-weight: 600; }
+  tr:nth-child(even) td { background: var(--bg-alt); }
+  code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  code { background: var(--code-bg); padding: 1px 5px; border-radius: 3px; font-size: 0.9em; }
+  pre { background: var(--code-bg); padding: 14px 16px; border-radius: 6px; overflow-x: auto;
+        font-size: 0.88em; line-height: 1.5; border: 1px solid var(--border); }
+  pre code { background: none; padding: 0; }
+  img.diagram { width: 100%; border: 1px solid var(--border); border-radius: 6px; margin: 16px 0; }
+  ol.steps { padding-left: 1.3em; }
+  ol.steps li { margin: 8px 0; }
+  .tag { display: inline-block; font-size: 0.76em; font-weight: 600; padding: 1px 7px;
+         border-radius: 10px; background: var(--accent-light); color: var(--accent); margin-left: 6px; }
+  .tag.na { background: #eee; color: #777; }
+  footer { margin-top: 60px; padding-top: 20px; border-top: 1px solid var(--border);
+           color: var(--muted); font-size: 0.88em; }
+</style>
+</head>
+<body>
+
+<h1>XGIMI TITAN Noir — Control Bridge</h1>
+<p class="subtitle">An ESP32-S3 that gives the projector the discrete control it doesn't ship with.</p>
+<p class="meta">Serial over USB · 115200 8N1 · no IR receiver · no PJLink · no ADB</p>
+
+<div class="callout info">
+  <strong>The one thing to know.</strong> The Noir series dropped the IR receiver, the
+  3.5&nbsp;mm REMOTE port and PJLink network control that the original TITAN had. What it
+  kept is <strong>RS232 over a USB adapter</strong>, once you enable
+  <em>Settings → General → Serial Port Control</em>. Everything in this project is built on
+  that one surface, and on instruction <code>0x07</code>, which drives the on-screen menu
+  blind for the features the serial set doesn't expose.
+</div>
+
+<h2>Saturday, in five minutes</h2>
+
+<pre><code>tools/flash.sh p1        # build, upload, open the monitor
+
+# in the monitor — 115200, line ending = Newline
+k down                   # menu cursor moves?  → USB enumeration works
+temp                     # bytes come back?    → serial is bound, you're done
+poll 5                   # leave running, then put the projector in standby
+
+tools/flash.sh p2        # once you know which channel won</code></pre>
+
+<div class="callout ok">
+  <strong>Success criterion for the day:</strong> <code>temp</code> returns bytes.
+  Everything after that is software you can write at leisure.
+</div>
+
+<h2>Documents</h2>
+
+<div class="grid">
+  <div class="card">
+    <a href="docs/01-preflight.md">01 — Pre-flight</a>
+    <div class="card-meta">Before the parts arrive. Toolchain, firmware version, and the
+    menu photographs that save you an evening later.</div>
+  </div>
+  <div class="card">
+    <a href="docs/02-day1-test-card.md">02 — Day 1 test card</a>
+    <div class="card-meta">Print this. Tests 0–6 in order, with boxes to tick and the
+    decision tree at the bottom.</div>
+  </div>
+  <div class="card">
+    <a href="docs/03-wiring.md">03 — Wiring</a>
+    <div class="card-meta">Both phases, the CH340 jumper check, IR receiver filter,
+    and why the adapter's VCC stays disconnected.</div>
+  </div>
+  <div class="card">
+    <a href="docs/04-flashing.md">04 — Flashing</a>
+    <div class="card-meta">The three USB board settings that actually matter, arduino-cli
+    one-liners, first boot, OTA, and recovery.</div>
+  </div>
+  <div class="card">
+    <a href="docs/05-menu-mapping-worksheet.md">05 — Menu mapping worksheet</a>
+    <div class="card-meta">Anchoring, timing, and a worksheet for the deep features:
+    3D, lens memory, iris, keystone.</div>
+  </div>
+  <div class="card">
+    <a href="docs/06-command-reference.md">06 — Command reference</a>
+    <div class="card-meta">Every frame, verified against XGIMI's own image — including
+    the two places their document contradicts itself.</div>
+  </div>
+  <div class="card">
+    <a href="docs/07-troubleshooting.md">07 — Troubleshooting</a>
+    <div class="card-meta">Ordered by how often each one is the actual problem.</div>
+  </div>
+  <div class="card">
+    <a href="docs/08-integration.md">08 — Integration</a>
+    <div class="card-meta">SofaBaton via Roku emulation, Home Assistant, and the full
+    REST API.</div>
+  </div>
+  <div class="card">
+    <a href="plan/titan_noir_bridge_plan.md">Original build plan</a>
+    <div class="card-meta">The reasoning this was built from. Kept verbatim.</div>
+  </div>
+</div>
+
+<h2>Wiring</h2>
+
+<img class="diagram" src="hardware/wiring.png" alt="Wiring diagram: Phase 1 bring-up and the Phase 2 target build">
+
+<div class="callout warn">
+  <strong>Measure before you wire the CH340.</strong> A module with its jumper on 3.3&nbsp;V
+  may still idle TXD at 5&nbsp;V — some designs switch only the VCC output pin while the
+  CH340G itself runs at 5&nbsp;V. The ESP32-S3's inputs are <strong>not</strong> 5&nbsp;V
+  tolerant. Measure TXD to GND with nothing else attached; if it reads ~5&nbsp;V, put
+  1&nbsp;kΩ from TXD to GPIO18 and 2&nbsp;kΩ from GPIO18 to GND.
+</div>
+
+<h2>Firmware</h2>
+
+<p>Both sketches are pure arduino-esp32 with <strong>no external libraries</strong>, so
+there is nothing to install before flashing. Verified warning-free on arduino-esp32
+2.0.17 and 3.3.11, across every configuration permutation.</p>
+
+<table>
+  <tr><th>&nbsp;</th><th>titan_bridge_p1</th><th>titan_bridge_p2</th></tr>
+  <tr><td>Purpose</td><td>answer the Day 1 questions</td><td>run the theatre</td></tr>
+  <tr><td>Flash used</td><td>29%</td><td>54% (Minimal SPIFFS)</td></tr>
+  <tr><td>Serial over native USB CDC</td><td>yes</td><td>yes</td></tr>
+  <tr><td>Serial over UART1 → USB-TTL</td><td>one <code>#define</code></td><td>simultaneously</td></tr>
+  <tr><td>USB HID keyboard</td><td>yes</td><td>yes</td></tr>
+  <tr><td>IR transmit (Test 6 sweep)</td><td>yes</td><td>—</td></tr>
+  <tr><td>IR receive</td><td>—</td><td>yes</td></tr>
+  <tr><td>USB bus-event logging</td><td>yes</td><td>—</td></tr>
+  <tr><td>Parameter sweeping</td><td>yes</td><td>yes</td></tr>
+  <tr><td>Macro engine</td><td>—</td><td>yes</td></tr>
+  <tr><td>Power state machine</td><td>—</td><td>yes</td></tr>
+  <tr><td>Roku ECP + SSDP</td><td>—</td><td>yes</td></tr>
+  <tr><td>Web UI + REST API</td><td>—</td><td>yes</td></tr>
+  <tr><td>Wi-Fi provisioning + OTA</td><td>—</td><td>yes</td></tr>
+</table>
+
+<h3>Board settings — all three matter</h3>
+
+<table>
+  <tr><th>Setting</th><th>Value</th><th>Why</th></tr>
+  <tr><td>Board</td><td>ESP32S3 Dev Module</td><td>&nbsp;</td></tr>
+  <tr><td>USB Mode</td><td><strong>USB-OTG (TinyUSB)</strong></td><td>required for the HID keyboard</td></tr>
+  <tr><td>USB CDC On Boot</td><td><strong>Disabled</strong></td><td>keeps <code>Serial</code> on UART0 as the console</td></tr>
+  <tr><td>Upload Mode</td><td><strong>UART0 / Hardware CDC</strong></td><td>flash over UART while the native port is a keyboard</td></tr>
+  <tr><td>Partition Scheme</td><td>Minimal SPIFFS (1.9MB APP with OTA)</td><td>p2 needs the room</td></tr>
+</table>
+
+<h2>Three ideas worth knowing</h2>
+
+<ol class="steps">
+  <li><strong>One command path.</strong> A button on the web page, a Roku keypress from the
+  hub, an IR code and a Home&nbsp;Assistant service call all compile down to the same macro
+  script and run through the same engine. There is one place to fix things.</li>
+
+  <li><strong>Liveness by temperature probe.</strong> The projector's only feedback channel
+  is its temperature status. The bridge polls it every ten seconds: a reply means awake,
+  three silences mean asleep. That is what makes power on and off <em>idempotent</em> —
+  they mean what they say regardless of the state you started in, which is more than the
+  Bluetooth remote manages.</li>
+
+  <li><strong>Anchored macros.</strong> The serial set has no 3D, lens memory, iris or
+  keystone. Macros open by forcing a known state — <code>back, back, back, settings</code> —
+  then count from there. Without the anchor, one desynced press sends the rest of the
+  sequence somewhere random.</li>
+</ol>
+
+<h2>Command summary</h2>
+
+<p>Frame: <code>2A 2A &lt;len&gt; &lt;instr&gt; &lt;params…&gt; &lt;checksum&gt;</code>,
+where <code>len</code> is 1 plus the parameter count and the checksum is everything after
+the header, mod 256.</p>
+
+<pre><code>hdmi1 hdmi2 hdmi3? usbsrc          source select
+vivid movie imax perf tvmode sport filmmaker
+b1 … b10                           brightness
+power source up down left right ok back setting home
+volup voldn autofocus manfocus mute
+wake                               standby wake, "wakeup" in ASCII
+blank unblank                      screen off / on
+hrroff hrrbasic hrrmax             high refresh rate
+temp                               temperature status — the only feedback</code></pre>
+
+<h2>Known unknowns</h2>
+
+<p>The hardware has to answer these. They're listed so that finding one out is progress
+rather than a surprise.</p>
+
+<table>
+  <tr><th>Question</th><th>Why it's open</th><th>Settled by</th></tr>
+  <tr><td>Does CDC bind?</td>
+      <td>The projector's daemon almost certainly wants <code>/dev/ttyUSB*</code>, which
+      needs a real USB-serial chip; the ESP32 presents as <code>/dev/ttyACM*</code>.</td>
+      <td>Test 2</td></tr>
+  <tr><td>Do the USB ports stay powered in standby?</td>
+      <td>If not, <code>wake</code> can never reach the projector and power-on has to come
+      from a smart plug or HDMI-CEC.</td>
+      <td>Test 5 — run it early</td></tr>
+  <tr><td>Does HDMI3 exist as parameter <code>03</code>?</td>
+      <td>The document lists two HDMI inputs on a three-HDMI projector.</td>
+      <td>Test 4</td></tr>
+  <tr><td>High-refresh "extreme": <code>01</code> or <code>02</code>?</td>
+      <td>The document prints <code>01</code> and gives a checksum only reachable with
+      <code>02</code>. The firmware follows the checksum.</td>
+      <td>Test 3</td></tr>
+  <tr><td>Does SofaBaton's Roku profile surface the TV-only keys?</td>
+      <td>The bridge presents <code>is-tv=true</code> specifically to find out.</td>
+      <td>Pairing the hub</td></tr>
+</table>
+
+<h2>Tools</h2>
+
+<div class="grid">
+  <div class="card">
+    <a href="tools/titan_serial.py">titan_serial.py</a>
+    <div class="card-meta">Drive the projector from the laptop with only a USB-TTL adapter.
+    The fastest way to remove the ESP32 from the list of suspects.</div>
+  </div>
+  <div class="card">
+    <a href="tools/ecp_probe.py">ecp_probe.py</a>
+    <div class="card-meta">See the bridge the way a SofaBaton hub sees it. Standard library
+    only.</div>
+  </div>
+  <div class="card">
+    <a href="tools/flash.sh">flash.sh</a>
+    <div class="card-meta">Build, upload, monitor — or OTA — without remembering the FQBN.</div>
+  </div>
+  <div class="card">
+    <a href="homeassistant/titan_noir.yaml">Home Assistant package</a>
+    <div class="card-meta">Switch, sensors, selects, buttons, macro scripts and an
+    over-temperature alert. No MQTT, no HACS.</div>
+  </div>
+  <div class="card">
+    <a href="logs/TEST-LOG.md">Test log template</a>
+    <div class="card-meta">Fill this in on Saturday. Every console line is timestamped for
+    exactly this reason.</div>
+  </div>
+  <div class="card">
+    <a href="logs/menu-map.csv">Menu map</a>
+    <div class="card-meta">One row per deep feature: anchor, counted path, measured delay,
+    firmware version.</div>
+  </div>
+</div>
+
+<h2>After every projector firmware update</h2>
+
+<ol class="steps">
+  <li>Re-pull XGIMI's help-centre article and <strong>diff the command-table image</strong>.
+  They've already revised it once. New instruction bytes are the cheapest capability this
+  project will ever gain, and lens memory is promised in a future OTA.</li>
+  <li>Re-run Test 5 — standby power behaviour can change.</li>
+  <li>Re-verify one macro per menu branch before trusting the rest. Positional macros break
+  when a menu is reordered; that is the documented cost of reaching features the serial set
+  doesn't expose.</li>
+  <li>Note the new version against the mapping worksheet.</li>
+</ol>
+
+<footer>
+  <p><code>_theater-util</code> — XGIMI TITAN Noir Max control bridge.
+  Command frames verified against XGIMI help-centre article 53406154382361.
+  Firmware compiles clean on arduino-esp32 2.0.17 and 3.3.11.</p>
+</footer>
+
+</body>
+</html>
