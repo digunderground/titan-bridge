@@ -80,6 +80,30 @@ $A compile --fqbn esp32:esp32:esp32s3 \
 Add `--upload -p /dev/tty.usbserial-XXXX` to flash. Find the port with
 `$A board list`, or `ls /dev/tty.*` before and after plugging the board in.
 
+### From the Arduino IDE instead
+
+The IDE has no convenient way to pass `-DBOARD=`, so **set it in the file**:
+change the default near the top of `config.h`
+
+```c
+#ifndef BOARD
+#define BOARD BOARD_ESP32_WROOM      // was BOARD_S3_DEVKITC
+#endif
+```
+
+and pick the matching entry in Tools → Board. Getting these two out of step is
+the mistake to watch for: the IDE will happily build the DevKitC profile for a
+classic ESP32 and the build fails on the USB stack, or — worse — builds a
+UART1 pin map onto a board whose display owns those pins.
+
+`arduino-cli` and the IDE share `~/Library/Arduino15`, so a core installed by
+either is visible to both. To manage the esp32 core from the IDE's Boards
+Manager, add this to Preferences → Additional Boards Manager URLs:
+
+```
+https://espressif.github.io/arduino-esp32/package_esp32_index.json
+```
+
 Watch the size line on the **DevKitC** build: it lands at 81% of a 1.31 MB app
 partition, because that profile compiles the native-USB stack in as well. There
 is room, but not room to be careless with — if a future addition overflows it,
