@@ -32,6 +32,40 @@ instead of one 250 ms macro step at a time.
 **Still unknown:** everything on the serial side. Test 2 (does the daemon bind)
 is the next question, and it is the one the whole project turns on.
 
+---
+
+## Bridge bring-up — 2026-09-04, no projector attached
+
+HiLetgo ESP-WROOM-32, `titan_bridge_p2` built with `BOARD=3` (`CH_UART0`), so
+the projector link runs through the board's **own onboard USB-serial chip**.
+Laptop on the far end of that link running `tools/fake_projector.py`, standing
+in for the projector.
+
+```
+[0.422] link up: UART0/onboard-bridge @ 115200 8N1
+[5.325] TX 2A 2A 02 13 00 15
+[5.403] RX 2A 2A 03 13 01 00 17  temp=normal
+[6.830] power state -> awake
+```
+
+`/api/status`: `power=awake  temp=normal  rx=14  lastrx="2A 2A 03 13 01 00 17"`
+Wi-Fi `Nexus` → 10.0.0.215, rssi −55 dBm. mDNS and Roku ECP both up
+(`TB9E9C8544` on :8060).
+
+| Layer | Result |
+|---|---|
+| Board boots, poll loop at `POLL_INTERVAL_MS` | ✅ 10.0 s, measured |
+| 2A2A frame builder + checksum | ✅ `2A 2A 02 13 00 15`, `(2+0x13+0x00)&0xFF = 0x15` |
+| TX through the onboard bridge chip | ✅ |
+| RX framing and decode | ✅ `temp=normal` |
+| Power state machine → awake | ✅ on reply |
+| Power state machine → asleep | ✅ at 29.0 s, after `POLL_MISSES_TO_SLEEP` = 3 unanswered |
+| Wi-Fi, mDNS, REST API, Roku ECP | ✅ |
+| ROM boot chatter poisoning the stream | ✅ harmless — resynced away by the `2A 2A` search |
+
+**Everything in the chain is now proven except the projector.** Test 2 is the
+single remaining unknown: whether its serial daemon binds the bridge chip.
+
 ```
 Date:               ____________________
 Projector firmware: ____________________

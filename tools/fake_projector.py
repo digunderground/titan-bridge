@@ -73,7 +73,10 @@ def main():
                     help="decode but never reply — the bridge should then decide "
                          "it is asleep after POLL_MISSES_TO_SLEEP probes")
     ap.add_argument("--no-reset", action="store_true",
-                    help="do not toggle DTR/RTS on open, so the board is not reset")
+                    help="clear DTR/RTS before opening, to try to avoid resetting "
+                         "the board. Driver-dependent — observed to reset anyway "
+                         "on macOS with the generic usbserial driver, so treat a "
+                         "reboot at connect as expected either way")
     args = ap.parse_args()
 
     reply = build(0x13, [0x01, int(args.temp, 16)])
