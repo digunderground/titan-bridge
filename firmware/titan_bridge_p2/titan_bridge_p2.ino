@@ -58,16 +58,40 @@
 #include "ecp.h"
 #include "irrx.h"
 
+// -------------------------------- console ----------------------------------
+// Where the interactive console writes. On a board whose only USB port is
+// committed to the projector (CH_UART0) that is nowhere: anything printed to
+// UART0 would land in the middle of the 2A2A stream and confuse the daemon at
+// the other end. The web UI and the /api/log ring carry the same information,
+// so the console degrades to a sink rather than disappearing from the source.
+#if CONSOLE_ON_SERIAL
+  #define CON Serial
+#else
+  class NullPrint : public Print {
+   public:
+    size_t write(uint8_t) override            { return 1; }
+    size_t write(const uint8_t *, size_t n) override { return n; }
+  };
+  static NullPrint CON;
+#endif
+
 // ------------------------------- status LED --------------------------------
-// The DevKitC-1's onboard WS2812. Colour is the power state at a glance:
+// Colour is the power state at a glance:
 //   blue   booting / setup AP      amber  unknown      green  awake
 //   dim red  asleep                white flash         a frame went out
+// On boards with a plain single-colour LED the colour collapses to brightness,
+// which still distinguishes the states well enough to debug by.
 #if STATUS_LED_PIN >= 0
 static void led(uint8_t r, uint8_t g, uint8_t b) {
-  #if ESP_ARDUINO_VERSION_MAJOR >= 3
-    rgbLedWrite(STATUS_LED_PIN, r, g, b);
+  #if STATUS_LED_IS_RGB
+    #if ESP_ARDUINO_VERSION_MAJOR >= 3
+      rgbLedWrite(STATUS_LED_PIN, r, g, b);
+    #else
+      neopixelWrite(STATUS_LED_PIN, r, g, b);
+    #endif
   #else
-    neopixelWrite(STATUS_LED_PIN, r, g, b);
+    pinMode(STATUS_LED_PIN, OUTPUT);
+    digitalWrite(STATUS_LED_PIN, (r || g || b) ? HIGH : LOW);
   #endif
 }
 #else
@@ -90,44 +114,44 @@ static void ledUpdate() {
 // ================================= console =================================
 
 static void help() {
-  Serial.println();
-  Serial.println("=== TITAN Noir bridge (p2) ===");
-  Serial.println("Projector commands — type the name on its own:");
+  CON.println();
+  CON.println("=== TITAN Noir bridge (p2) ===");
+  CON.println("Projector commands — type the name on its own:");
   for (size_t i = 0; i < NCMDS; i++) {
-    Serial.print("  ");
-    Serial.print(CMDS[i].name);
-    if ((i % 5) == 4) Serial.println(); else Serial.print('\t');
+    CON.print("  ");
+    CON.print(CMDS[i].name);
+    if ((i % 5) == 4) CON.println(); else CON.print('\t');
   }
-  Serial.println();
-  Serial.println("Power (idempotent, verified with a temperature probe):");
-  Serial.println("  on | off | toggle");
-  Serial.println("Keyboard channel (native USB HID):");
-  Serial.print("  k <key>          ");
-  for (size_t i = 0; i < NHIDKEYS; i++) { Serial.print(HIDKEYS[i].name); Serial.print(' '); }
-  Serial.println();
-  Serial.println("Macros:");
-  Serial.println("  macs             list");
-  Serial.println("  mac <name>       run");
-  Serial.println("  run <script>     run an inline script");
-  Serial.println("  macdef <name> <script>");
-  Serial.println("  macdel <name>    macabort");
-  Serial.println("  script grammar:  s:<cmd>  h:<key>  r:<hex>  p:on|off  d<ms>  anchor  tok*<n>");
-  Serial.println("Infrared:");
-  Serial.println("  irmaps           list bindings");
-  Serial.println("  irmap <code> <action>     e.g. irmap 21DE:4D m:movie");
-  Serial.println("  irdel <code>");
-  Serial.println("Network:");
-  Serial.println("  wifi <ssid> <pass>        forget        reboot");
-  Serial.println("Diagnostics:");
-  Serial.println("  raw <hex>                 status        ?");
-  Serial.println("  sweep <instr> <from> <to> probe undocumented parameters");
-  Serial.println();
+  CON.println();
+  CON.println("Power (idempotent, verified with a temperature probe):");
+  CON.println("  on | off | toggle");
+  CON.println("Keyboard channel (native USB HID):");
+  CON.print("  k <key>          ");
+  for (size_t i = 0; i < NHIDKEYS; i++) { CON.print(HIDKEYS[i].name); CON.print(' '); }
+  CON.println();
+  CON.println("Macros:");
+  CON.println("  macs             list");
+  CON.println("  mac <name>       run");
+  CON.println("  run <script>     run an inline script");
+  CON.println("  macdef <name> <script>");
+  CON.println("  macdel <name>    macabort");
+  CON.println("  script grammar:  s:<cmd>  h:<key>  r:<hex>  p:on|off  d<ms>  anchor  tok*<n>");
+  CON.println("Infrared:");
+  CON.println("  irmaps           list bindings");
+  CON.println("  irmap <code> <action>     e.g. irmap 21DE:4D m:movie");
+  CON.println("  irdel <code>");
+  CON.println("Network:");
+  CON.println("  wifi <ssid> <pass>        forget        reboot");
+  CON.println("Diagnostics:");
+  CON.println("  raw <hex>                 status        ?");
+  CON.println("  sweep <instr> <from> <to> probe undocumented parameters");
+  CON.println();
 }
 
 static void status() {
-  Serial.println();
-  Serial.println(statusJson());
-  Serial.println();
+  CON.println();
+  CON.println(statusJson());
+  CON.println();
 }
 
 static uint8_t hexByte(const char *s, bool *ok) {
@@ -145,14 +169,14 @@ static uint8_t hexByte(const char *s, bool *ok) {
 }
 
 static void doSweep(char *arg) {
-  char *b = strchr(arg, ' '); if (!b) { Serial.println("sweep <instr> <from> <to>"); return; }
+  char *b = strchr(arg, ' '); if (!b) { CON.println("sweep <instr> <from> <to>"); return; }
   *b++ = 0; while (*b == ' ') b++;
-  char *c = strchr(b, ' ');   if (!c) { Serial.println("sweep <instr> <from> <to>"); return; }
+  char *c = strchr(b, ' ');   if (!c) { CON.println("sweep <instr> <from> <to>"); return; }
   *c++ = 0; while (*c == ' ') c++;
   bool o1, o2, o3;
   uint8_t instr = hexByte(arg, &o1), from = hexByte(b, &o2), to = hexByte(c, &o3);
-  if (!o1 || !o2 || !o3 || to < from) { Serial.println("bad arguments"); return; }
-  if (instr == 0x06) { Serial.println("refusing: 0x06 is factory reset"); return; }
+  if (!o1 || !o2 || !o3 || to < from) { CON.println("bad arguments"); return; }
+  if (instr == 0x06) { CON.println("refusing: 0x06 is factory reset"); return; }
   String s;
   for (uint16_t p = from; p <= to; p++) {
     char t[24];
@@ -160,7 +184,7 @@ static void doSweep(char *arg) {
              (uint8_t)((2 + instr + p) & 0xFF));
     s += t; s += "; ";
   }
-  Serial.printf("Sweeping instr 0x%02X params 0x%02X..0x%02X — watch the screen.\n",
+  CON.printf("Sweeping instr 0x%02X params 0x%02X..0x%02X — watch the screen.\n",
                 instr, from, to);
   macroRunScript(s.c_str());
 }
@@ -174,54 +198,54 @@ static void handleLine(char *line) {
 
   if (!strcmp(line, "?") || !strcasecmp(line, "help"))  { help(); return; }
   if (!strcasecmp(line, "status"))   { status(); return; }
-  if (!strcasecmp(line, "reboot"))   { Serial.println("rebooting"); delay(200); ESP.restart(); }
+  if (!strcasecmp(line, "reboot"))   { CON.println("rebooting"); delay(200); ESP.restart(); }
   if (!strcasecmp(line, "on"))       { titanPowerOn();     return; }
   if (!strcasecmp(line, "off"))      { titanPowerOff();    return; }
   if (!strcasecmp(line, "toggle"))   { titanPowerToggle(); return; }
   if (!strcasecmp(line, "raw"))      { if (arg && titanSendRawHex(arg)) return;
-                                       Serial.println("raw <hex>"); return; }
-  if (!strcasecmp(line, "sweep"))    { if (arg) doSweep(arg); else Serial.println("sweep <instr> <from> <to>"); return; }
+                                       CON.println("raw <hex>"); return; }
+  if (!strcasecmp(line, "sweep"))    { if (arg) doSweep(arg); else CON.println("sweep <instr> <from> <to>"); return; }
   if (!strcasecmp(line, "k")) {
-    if (!arg || !titanHid(arg)) Serial.println("k <key> — unknown key");
+    if (!arg || !titanHid(arg)) CON.println("k <key> — unknown key");
     return;
   }
-  if (!strcasecmp(line, "macs"))     { Serial.println(macroListJson()); return; }
+  if (!strcasecmp(line, "macs"))     { CON.println(macroListJson()); return; }
   if (!strcasecmp(line, "macabort")) { macroAbort(); return; }
   if (!strcasecmp(line, "mac")) {
-    if (!arg || !macroRun(arg)) Serial.println("no such macro (or one is already running)");
+    if (!arg || !macroRun(arg)) CON.println("no such macro (or one is already running)");
     return;
   }
   if (!strcasecmp(line, "run")) {
-    if (!arg || !macroRunScript(arg)) Serial.println("run <script>");
+    if (!arg || !macroRunScript(arg)) CON.println("run <script>");
     return;
   }
   if (!strcasecmp(line, "macdef")) {
-    if (!arg) { Serial.println("macdef <name> <script>"); return; }
+    if (!arg) { CON.println("macdef <name> <script>"); return; }
     char *sp = strchr(arg, ' ');
-    if (!sp) { Serial.println("macdef <name> <script>"); return; }
+    if (!sp) { CON.println("macdef <name> <script>"); return; }
     *sp++ = 0; while (*sp == ' ') sp++;
-    if (!macroDefine(arg, sp)) Serial.println("could not save");
+    if (!macroDefine(arg, sp)) CON.println("could not save");
     return;
   }
   if (!strcasecmp(line, "macdel")) {
-    if (!arg || !macroDelete(arg)) Serial.println("not found");
+    if (!arg || !macroDelete(arg)) CON.println("not found");
     return;
   }
-  if (!strcasecmp(line, "irmaps"))   { Serial.println(irMapJson()); return; }
+  if (!strcasecmp(line, "irmaps"))   { CON.println(irMapJson()); return; }
   if (!strcasecmp(line, "irmap")) {
-    if (!arg) { Serial.println("irmap <code> <action>"); return; }
+    if (!arg) { CON.println("irmap <code> <action>"); return; }
     char *sp = strchr(arg, ' ');
-    if (!sp) { Serial.println("irmap <code> <action>"); return; }
+    if (!sp) { CON.println("irmap <code> <action>"); return; }
     *sp++ = 0; while (*sp == ' ') sp++;
-    if (!irMap(arg, sp)) Serial.println("could not bind");
+    if (!irMap(arg, sp)) CON.println("could not bind");
     return;
   }
   if (!strcasecmp(line, "irdel")) {
-    if (!arg || !irUnmap(arg)) Serial.println("not found");
+    if (!arg || !irUnmap(arg)) CON.println("not found");
     return;
   }
   if (!strcasecmp(line, "wifi")) {
-    if (!arg) { Serial.println("wifi <ssid> <pass>"); return; }
+    if (!arg) { CON.println("wifi <ssid> <pass>"); return; }
     char *sp = strchr(arg, ' ');
     if (sp) { *sp++ = 0; while (*sp == ' ') sp++; }
     netSetCreds(arg, sp ? sp : "");
@@ -229,18 +253,19 @@ static void handleLine(char *line) {
   }
   if (!strcasecmp(line, "forget"))   { netForget(); return; }
 
-  if (!titanSendNamed(line)) Serial.println("unknown — type ? for help");
+  if (!titanSendNamed(line)) CON.println("unknown — type ? for help");
 }
 
 // ================================== main ===================================
 
 void setup() {
+  // titanBegin() re-opens this at LINK_BAUD when UART0 is the projector link.
   Serial.begin(115200);
   delay(400);
   led(0, 0, 24);
 
-  Serial.println();
-  Serial.println("=== " FW_VERSION " ===");
+  CON.println();
+  CON.println("=== " FW_VERSION " ===");
 
   titanBegin();
   macrosBegin();
@@ -250,19 +275,26 @@ void setup() {
 
   help();
   status();
-  Serial.println("Ready.");
+  CON.println("Ready.");
 }
 
 void loop() {
   static char buf[192];
   static uint16_t n = 0;
 
+  // Compiled out, not merely silenced, when UART0 belongs to the projector:
+  // this loop and titanLoop() would otherwise race for the same bytes and each
+  // would see a corrupted half of every reply.
+#if CONSOLE_ON_SERIAL
   while (Serial.available()) {
     char c = Serial.read();
     if (c == '\r') continue;
     if (c == '\n') { buf[n] = 0; handleLine(buf); n = 0; }
     else if (n < sizeof(buf) - 1) buf[n++] = c;
   }
+#else
+  (void)buf; (void)n;
+#endif
 
   titanLoop();
   macrosLoop();

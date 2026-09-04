@@ -3,12 +3,18 @@
 #include <stdarg.h>
 #include "titan.h"
 
-#include "USB.h"
-#include "USBCDC.h"
-#include "USBHIDKeyboard.h"
+// Native USB exists only on the S3 family, and even there only when the
+// connector is wired to the S3's own D+/D- rather than to an onboard bridge
+// chip. Both the headers and the objects have to go behind the guard: a
+// classic ESP32 has no USB peripheral for these to compile against at all.
+#if HAS_NATIVE_USB
+  #include "USB.h"
+  #include "USBCDC.h"
+  #include "USBHIDKeyboard.h"
 
-static USBCDC         PJ;
-static USBHIDKeyboard KB;
+  static USBCDC         PJ;
+  static USBHIDKeyboard KB;
+#endif
 
 // ============================== log ring ===================================
 
@@ -26,7 +32,12 @@ void tlog(const char *fmt, ...) {
   vsnprintf(line + n, sizeof(line) - n, fmt, ap);
   va_end(ap);
 
+  // When UART0 is carrying the projector, printing here would inject log text
+  // straight into the 2A2A stream. The ring buffer and the web UI are the only
+  // console in that configuration.
+#if CONSOLE_ON_SERIAL
   Serial.println(line);
+#endif
   strncpy(logBuf[logHead], line, LOG_LINE_MAX - 1);
   logBuf[logHead][LOG_LINE_MAX - 1] = 0;
   logHead = (logHead + 1) % LOG_LINES;
@@ -128,7 +139,11 @@ static uint8_t    pollMisses = 0;
 uint32_t    titanTxFrames()  { return txFrames; }
 uint32_t    titanRxBytes()   { return rxBytes; }
 uint32_t    titanMsSinceRx() { return everRx ? (millis() - lastRxAt) : UINT32_MAX; }
+#if HAS_NATIVE_USB
 bool        titanCdcOpen()   { return (bool)PJ; }
+#else
+bool        titanCdcOpen()   { return false; }   // no native port to open
+#endif
 PowerState  titanPower()     { return pwr; }
 const char *titanLastRxHex() { return lastRxHex; }
 
@@ -161,6 +176,10 @@ static void linkWrite(const uint8_t *b, size_t n) {
 #if (SERIAL_CHANNELS & CH_UART1)
   Serial1.write(b, n);
   Serial1.flush();
+#endif
+#if (SERIAL_CHANNELS & CH_UART0)
+  Serial.write(b, n);
+  Serial.flush();
 #endif
 }
 
@@ -216,6 +235,7 @@ bool titanSendRawHex(const char *hex) {
 }
 
 bool titanHid(const char *name) {
+#if HAS_HID
   for (size_t i = 0; i < NHIDKEYS; i++) {
     if (!strcasecmp(name, HIDKEYS[i].name)) {
       KB.pressRaw(HIDKEYS[i].usage);
@@ -226,6 +246,14 @@ bool titanHid(const char *name) {
     }
   }
   return false;
+#else
+  // Report the reason rather than returning a bare false, which the console
+  // and /api/hid would otherwise render as "unknown key" — a misleading answer
+  // when the key is fine and it is the board that cannot type it.
+  (void)name;
+  tlog("HID unavailable: this board has no native USB device port");
+  return false;
+#endif
 }
 
 // ============================== receive ====================================
@@ -416,15 +444,23 @@ void titanBegin() {
   PJ.setDebugOutput(false);
   PJ.setTxTimeoutMs(20);          // never block the loop on an unopened port
 #endif
+#if (SERIAL_CHANNELS & CH_UART0)
+  // Serial was already opened by setup() at this baud; restated here so the
+  // link's baud is not silently inherited from whatever the console wanted.
+  Serial.begin(LINK_BAUD, SERIAL_8N1);
+#endif
+#if HAS_NATIVE_USB
   KB.begin();
   USB.productName(DEVICE_NAME);
   USB.manufacturerName("DIY");
   USB.begin();
+#endif
 
   pollAt = millis() + 2000;
-  tlog("link up: %s%s @ %d 8N1",
+  tlog("link up: %s%s%s @ %d 8N1",
        (SERIAL_CHANNELS & CH_NATIVE_CDC) ? "native-CDC " : "",
-       (SERIAL_CHANNELS & CH_UART1) ? "UART1" : "", LINK_BAUD);
+       (SERIAL_CHANNELS & CH_UART1) ? "UART1 " : "",
+       (SERIAL_CHANNELS & CH_UART0) ? "UART0/onboard-bridge" : "", LINK_BAUD);
 }
 
 void titanLoop() {
@@ -433,6 +469,9 @@ void titanLoop() {
 #endif
 #if (SERIAL_CHANNELS & CH_UART1)
   while (Serial1.available()) rxByte((uint8_t)Serial1.read());
+#endif
+#if (SERIAL_CHANNELS & CH_UART0)
+  while (Serial.available()) rxByte((uint8_t)Serial.read());
 #endif
   // a partial frame that stops arriving is abandoned, not left to poison
   // the next one

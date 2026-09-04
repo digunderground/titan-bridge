@@ -16,6 +16,7 @@ Settings → General → Serial Port Control. Everything here is built on that.
 | If you are… | Go to |
 |---|---|
 | waiting for parts | [`docs/01-preflight.md`](docs/01-preflight.md) |
+| impatient, with any ESP32 board and no dongle | [`docs/09-onboard-bridge-path.md`](docs/09-onboard-bridge-path.md) |
 | holding the parts, it's Saturday morning | [`docs/02-day1-test-card.md`](docs/02-day1-test-card.md) |
 | wiring | [`docs/03-wiring.md`](docs/03-wiring.md) · [`hardware/wiring.svg`](hardware/wiring.svg) |
 | flashing | [`docs/04-flashing.md`](docs/04-flashing.md) |

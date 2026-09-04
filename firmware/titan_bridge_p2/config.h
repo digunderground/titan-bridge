@@ -10,24 +10,113 @@
 // --------------------------------------------------------------------------
 // Which serial channel(s) carry the 2A2A frames.
 //
-// Day 1 tells you which one the projector actually binds. Until then, leave
-// this at BOTH: writing into a channel nothing is listening on costs nothing,
-// and the target architecture in the plan (§5) uses both projector USB ports
-// simultaneously anyway — native USB for HID, the CH340 dongle for serial.
+// Day 1 tells you which one the projector actually binds. Writing into a
+// channel nothing is listening on costs nothing, and the target architecture
+// in the plan (§5) uses both projector USB ports simultaneously anyway —
+// native USB for HID, the CH340 dongle for serial.
+//
+// CH_UART0 is the "no dongle in the drawer" channel. Every dev board with an
+// onboard CP2102/CH340 already *is* a USB-serial dongle: plug the board's own
+// USB port into the projector and its daemon binds the bridge chip as
+// /dev/ttyUSB0, exactly as it would an external module. The ESP32 then talks
+// to the projector through its own bridge, over UART0.
+//
+// The cost is the console: UART0 is also the flashing and serial-monitor port,
+// so while it is committed to the projector there is no laptop console. Use
+// the web UI (http://titan-bridge.local/) instead — it carries the same log
+// and command surface. See docs/09-onboard-bridge-path.md.
 // --------------------------------------------------------------------------
 #define CH_NATIVE_CDC   0x01      // ESP32-S3 native USB -> projector USB port
 #define CH_UART1        0x02      // ESP32 UART1 -> CH340/CP2102 -> projector USB
-
-#define SERIAL_CHANNELS (CH_NATIVE_CDC | CH_UART1)
+#define CH_UART0        0x04      // ESP32 UART0 -> onboard bridge -> projector USB
 
 // --------------------------------------------------------------------------
-// Pins
+// Board profile. Pick the board you are actually holding; each one sets its
+// own pins and its own default channel set. Override any of them below.
 // --------------------------------------------------------------------------
-#define P2_TX_PIN        17       // ESP32 TX1  -> adapter RXD
-#define P2_RX_PIN        18       // ESP32 RX1  <- adapter TXD  (3V3! see docs/03)
-#define IR_RX_PIN        15       // TSOP38238 OUT
-#define IR_TX_PIN         4       // 940 nm LED anode -> 100R -> here
-#define STATUS_LED_PIN   48       // DevKitC-1 onboard WS2812. -1 to disable.
+#define BOARD_S3_DEVKITC    1     // ESP32-S3-DevKitC-1, dual USB-C  (target)
+#define BOARD_HELTEC_LORA   2     // Heltec WiFi LoRa 32 V3/V4 (ESP32-S3 + CP2102)
+#define BOARD_ESP32_WROOM   3     // classic ESP32 devkit (WROOM-32 + CP2102/CH340)
+
+#ifndef BOARD
+#define BOARD BOARD_S3_DEVKITC
+#endif
+
+#if   BOARD == BOARD_S3_DEVKITC
+  // Two USB-C ports is the whole point: native USB to the projector, UART to
+  // the laptop, so the console survives and reflashing costs no unplugging.
+  #define HAS_NATIVE_USB      1
+  #define P2_TX_PIN          17     // ESP32 TX1  -> adapter RXD
+  #define P2_RX_PIN          18     // ESP32 RX1  <- adapter TXD  (3V3! see docs/03)
+  #define IR_RX_PIN          15     // TSOP38238 OUT
+  #define IR_TX_PIN           4     // 940 nm LED anode -> 100R -> here
+  #define STATUS_LED_PIN     48     // onboard WS2812. -1 to disable.
+  #define STATUS_LED_IS_RGB   1
+  #ifndef SERIAL_CHANNELS_WANTED
+  #define SERIAL_CHANNELS_WANTED (CH_NATIVE_CDC | CH_UART1)
+  #endif
+
+#elif BOARD == BOARD_HELTEC_LORA
+  // ESP32-S3, so native USB exists in the silicon — but the USB-C connector is
+  // wired to the CP2102, not to the S3's D+/D-. Reaching the native port means
+  // soldering a USB lead to GPIO19/20, so the onboard bridge is the easy path.
+  //
+  // Pins are tight on this board: SX1262 owns GPIO8-14, and the OLED owns
+  // GPIO17/18 — which are exactly the DevKitC's UART1 pins, so the stock
+  // mapping would fight the display. UART1 is moved to free pins here.
+  #define HAS_NATIVE_USB      0     // not on the connector; 1 only if you solder
+  #define P2_TX_PIN           2     // free header pin
+  #define P2_RX_PIN           3     // free header pin
+  #define IR_RX_PIN           7     // free header pin
+  #define IR_TX_PIN           6     // free header pin
+  #define STATUS_LED_PIN     35     // plain white LED, NOT a WS2812
+  #define STATUS_LED_IS_RGB   0
+  #ifndef SERIAL_CHANNELS_WANTED
+  #define SERIAL_CHANNELS_WANTED (CH_UART0)
+  #endif
+
+#elif BOARD == BOARD_ESP32_WROOM
+  // Classic ESP32: no USB peripheral in the silicon at all, so native CDC and
+  // the HID keyboard channel do not exist. The onboard bridge is the only way
+  // to reach the projector, and it is enough for every serial test.
+  #define HAS_NATIVE_USB      0
+  #define P2_TX_PIN          17     // free on WROOM-32; on WROVER these two are
+  #define P2_RX_PIN          18     // eaten by PSRAM — move them if you see one
+  #define IR_RX_PIN          15
+  #define IR_TX_PIN           4
+  #define STATUS_LED_PIN      2     // the usual blue LED
+  #define STATUS_LED_IS_RGB   0
+  #ifndef SERIAL_CHANNELS_WANTED
+  #define SERIAL_CHANNELS_WANTED (CH_UART0)
+  #endif
+
+#else
+  #error "Unknown BOARD — see the board profiles above"
+#endif
+
+// A board without native USB cannot present a CDC endpoint or an HID keyboard,
+// whatever the channel mask asks for — so the native bit is masked out rather
+// than failing to compile. UART1 survives the mask: a classic ESP32 driving an
+// external CH340 is a perfectly good Phase 2 rig.
+#if HAS_NATIVE_USB
+  #define HAS_HID           1
+  #define SERIAL_CHANNELS  (SERIAL_CHANNELS_WANTED)
+#else
+  #define HAS_HID           0
+  #define SERIAL_CHANNELS  (SERIAL_CHANNELS_WANTED & ~CH_NATIVE_CDC)
+#endif
+
+#if SERIAL_CHANNELS == 0
+  #error "No usable serial channel: this board has no native USB, so pick CH_UART0 or CH_UART1"
+#endif
+
+// UART0 carries the projector when that channel is on, so the console cannot
+// also live there. Everything moves to the web UI and the log ring.
+#if (SERIAL_CHANNELS & CH_UART0)
+  #define CONSOLE_ON_SERIAL 0
+#else
+  #define CONSOLE_ON_SERIAL 1
+#endif
 
 #define LINK_BAUD    115200
 
