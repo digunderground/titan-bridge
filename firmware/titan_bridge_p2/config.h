@@ -146,7 +146,13 @@
 // Set to 1 once Day 1 Test 5 proves the USB ports die in standby. The bridge
 // then stops pretending it can wake the projector and says so in /api/status,
 // instead of silently failing.
-#define USB_DEAD_IN_STANDBY        0
+//
+// 2026-09-04: confirmed on the TITAN Noir Max — the USB ports lose power in
+// standby. Nothing sent over USB can ever wake this projector, so power-on has
+// to come from a smart plug (with power-on-when-mains-applied) or HDMI-CEC.
+// It also means the bridge must have its own 5 V supply: powered from the
+// projector's USB it dies at exactly the moment it is needed. See plan §7.
+#define USB_DEAD_IN_STANDBY        1
 
 // --------------------------------------------------------------------------
 // Macro timing (plan §6). The OSD animates; commands sent mid-transition get

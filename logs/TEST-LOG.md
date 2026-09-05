@@ -66,6 +66,63 @@ Wi-Fi `Nexus` → 10.0.0.215, rssi −55 dBm. mDNS and Roku ECP both up
 **Everything in the chain is now proven except the projector.** Test 2 is the
 single remaining unknown: whether its serial daemon binds the bridge chip.
 
+---
+
+## Test 2 — CDC/serial binding: **FAILED** — 2026-09-04
+
+The projector does not bind a CP2102 as a serial device. Not a wiring problem,
+not a firmware problem, not a cable.
+
+### What was ruled out, and how
+
+| Suspect | Ruled out by |
+|---|---|
+| Bridge firmware / frame format | `fake_projector.py` round-trips the same build: TX, RX, decode, power state all correct |
+| Cable (charge-only) | Board enumerated as `/dev/cu.usbserial-0001` **through the projector cable** on the laptop |
+| Wrong chip class | It is a **CP2102**, Silicon Labs `0x10C4`, serial `0001` — one of the three drivers (`ch341`/`cp210x`/`pl2303`) the plan expects |
+| Serial Port Control off | On, verified on-screen |
+| Daemon not started at boot | Full mains power-cycle, retested |
+| Wrong USB port | Both 3.0 and 2.0 tried |
+| Projector USB port dead | A USB **keyboard** on the same port drives the OSD perfectly |
+| ID addressing | 7 header variants — `**`, `A0`, `*0`, `A*`, `A\0`, and the address before/after the header — all silent |
+
+### The decisive observation
+
+`uptime` climbs monotonically the entire time the board is on the projector. A
+host opening a CP2102 asserts DTR, and on any ESP32 dev board that resets the
+MCU — it is exactly how `esptool` reboots it (`Hard resetting via RTS pin`).
+**The projector never asserted DTR, so it never opened the port.** This is not
+a daemon that binds and ignores us; it is a daemon that never binds.
+
+### Serial Port Control menu, as found
+
+```
+Serial Port Control Switch   ON
+Serial Port ID Group          A
+Serial Port ID Number         0
+Serial Port Response (Group) ON
+Serial Port Response (All)   ON
+```
+
+`docs/06-command-reference.md` was transcribed from XGIMI's published command
+image, and **that image documents no ID field at all**. The firmware exposes
+group/ID addressing the protocol document does not describe.
+
+### The leading explanation
+
+Group + ID addressing is a **multi-projector daisy-chain feature** for
+commercial installs. Finding it on a consumer home-theatre projector, attached
+to a serial stack that never opens a port, suggests the whole Serial Port
+Control page may be inherited UI from a shared firmware base with a commercial
+sibling that has a real DB9 — present in the menu, unimplemented in the
+hardware. Not proven. But it fits every observation.
+
+### Still untested
+
+CH340 (`ch341`) and PL2303 (`pl2303`) adapters, on order. A genuine USB-to-RS232
+DB9 adapter into a MAX3232 is the last rung. If all three fail, the explanation
+above is almost certainly right.
+
 ```
 Date:               ____________________
 Projector firmware: ____________________
