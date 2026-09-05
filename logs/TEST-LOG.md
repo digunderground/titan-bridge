@@ -123,6 +123,45 @@ CH340 (`ch341`) and PL2303 (`pl2303`) adapters, on order. A genuine USB-to-RS232
 DB9 adapter into a MAX3232 is the last rung. If all three fail, the explanation
 above is almost certainly right.
 
+---
+
+## Test 5 — standby behaviour: **ports stay powered** — 2026-09-04
+
+Measured, not impression. The bridge was plugged into a projector USB port with
+**no other power source**, and the projector was switched off. It stayed up:
+
+```
+uptime=355s  power=asleep  tx=42  rx=0
+uptime=361s  power=asleep  tx=42  rx=0
+uptime=367s  power=asleep  tx=43  rx=0
+```
+
+Wi-Fi held, uptime climbed straight through the power-off, no reboot.
+
+**The USB ports remain powered in standby.** Distinguish this from mains-off,
+where nothing survives — an earlier impression that the ports died was wrong.
+
+### What it changes
+
+`USB_DEAD_IN_STANDBY` stays **0**. The bridge survives standby, so it is still
+there to wake the projector — which is the whole premise of plan §5's "power
+the ESP32 from its own supply" requirement. That requirement is now a
+convenience rather than a necessity, though a separate supply is still better
+practice than depending on the projector's rail.
+
+### The open question this creates
+
+The port is alive in standby, but **can anything we send actually wake it?**
+
+- Serial `wakeup` — unavailable, Test 2 failed on this model.
+- **HID keypress — untested, and now the single most valuable experiment
+  left.** A USB keyboard already drives the OSD when the projector is awake.
+  If a keypress also wakes it from standby, there is discrete power-on with no
+  smart plug, no HDMI-CEC, and no serial.
+
+Test: leave a USB keyboard plugged in, put the projector in standby, press
+keys. Anything that wakes it is the power-on path.
+
 ```
 Date:               ____________________
 Projector firmware: ____________________
