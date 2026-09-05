@@ -1,4 +1,25 @@
-# _theater-util — XGIMI TITAN Noir control bridge
+# titan-bridge — XGIMI TITAN Noir control bridge
+
+> **Alpha 0.0.1.** Working on one unit — an XGIMI TITAN Noir Max — and not yet
+> tried anywhere else. The serial channel XGIMI documents does **not** work on
+> this projector (three USB-serial driver classes tried, none bind); everything
+> here runs over **USB HID** instead, which does. Expect the menu-walking macros
+> to be specific to one firmware build. See `logs/TEST-LOG.md` for what was
+> measured rather than assumed.
+
+## What works
+
+| | |
+|---|---|
+| Discrete power on / off | ✅ HID usage `0x66`, verified in both directions including wake from standby |
+| Menu navigation | ✅ arrows, OK, Back, Menu |
+| Volume, focus | ✅ |
+| Home Assistant | ✅ REST API |
+| SofaBaton X2 | ✅ via Roku ECP emulation; macros appear as launchable apps |
+| Macro recorder + editor | ✅ records real key timing, saves as an editable script |
+| Serial command set (inputs, picture modes, brightness) | ❌ the projector never binds a USB-serial adapter |
+| Verified power state | ❌ no feedback channel, so on/off track an assumption |
+
 
 An ESP32-S3 that gives an XGIMI TITAN Noir Max the discrete control it does not
 ship with: real power on and off, direct input select, picture presets, and a
