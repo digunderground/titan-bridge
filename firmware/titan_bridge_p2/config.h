@@ -161,6 +161,26 @@
 #define USB_DEAD_IN_STANDBY        0
 
 // --------------------------------------------------------------------------
+// Key channel — which transport carries menu navigation.
+//
+// The plan assumed serial: instruction 0x07 exposes Settings, Home, Back, OK
+// and the four arrows, so the bridge can drive the OSD without a keyboard.
+// On a projector where the serial daemon never binds (Test 2 on the Noir Max),
+// that channel does not exist and the same navigation has to go out over USB
+// HID instead — which a plain USB keyboard proves the projector accepts.
+//
+// Which one works is a property of the projector, not of the build, so this is
+// only the startup default; `keychan` / /api/keychan changes it at runtime and
+// the choice is remembered across reboots.
+// --------------------------------------------------------------------------
+#define KEY_CHANNEL_SERIAL  0
+#define KEY_CHANNEL_HID     1
+
+#ifndef DEFAULT_KEY_CHANNEL
+#define DEFAULT_KEY_CHANNEL KEY_CHANNEL_SERIAL
+#endif
+
+// --------------------------------------------------------------------------
 // Macro timing (plan §6). The OSD animates; commands sent mid-transition get
 // eaten. These are starting points — tune per macro, fastest reliable value.
 // --------------------------------------------------------------------------

@@ -147,7 +147,7 @@ String macroListJson() {
 // --------------------------------------------------------------------------
 // Compiled step list
 // --------------------------------------------------------------------------
-enum StepType { ST_SERIAL, ST_HID, ST_RAW, ST_DELAY, ST_POWER };
+enum StepType { ST_SERIAL, ST_HID, ST_KEY, ST_RAW, ST_DELAY, ST_POWER };
 
 struct Step {
   uint8_t type;
@@ -185,11 +185,14 @@ static bool pushToken(const char *tok) {
 
   if (!strcasecmp(tok, "anchor")) {
     // Unwind whatever is on screen, then enter at a known root.
+    // Navigation goes out on whichever channel this projector honours, so an
+    // anchored macro keeps working if the answer turns out to be HID rather
+    // than serial. See titanKey() and `keychan`.
     for (int i = 0; i < 3; i++) {
-      pushStep(ST_SERIAL, "back", 0);
+      pushStep(ST_KEY, "back", 0);
       pushStep(ST_DELAY, NULL, MACRO_ANCHOR_MS);
     }
-    pushStep(ST_SERIAL, "setting", 0);
+    pushStep(ST_KEY, "setting", 0);
     pushStep(ST_DELAY, NULL, MACRO_ANCHOR_MS * 2);
     return true;
   }
@@ -197,6 +200,7 @@ static bool pushToken(const char *tok) {
     return pushStep(ST_DELAY, NULL, (uint16_t)atoi(tok + 1));
   if (!strncasecmp(tok, "s:", 2)) return pushStep(ST_SERIAL, tok + 2, 0);
   if (!strncasecmp(tok, "h:", 2)) return pushStep(ST_HID,    tok + 2, 0);
+  if (!strncasecmp(tok, "k:", 2)) return pushStep(ST_KEY,    tok + 2, 0);
   if (!strncasecmp(tok, "r:", 2)) return pushStep(ST_RAW,    tok + 2, 0);
   if (!strncasecmp(tok, "p:", 2)) return pushStep(ST_POWER,  tok + 2, 0);
 
@@ -264,6 +268,8 @@ void macrosLoop() {
     case ST_DELAY:  gap = s.ms; break;
     case ST_SERIAL: if (!titanSendNamed(s.arg)) tlog("macro: unknown command '%s'", s.arg); break;
     case ST_HID:    if (!titanHid(s.arg))       tlog("macro: unknown HID key '%s'", s.arg); break;
+    case ST_KEY:    if (!titanKey(s.arg))       tlog("macro: key '%s' failed on the %s channel",
+                                                     s.arg, titanKeyChannelStr()); break;
     case ST_RAW:    titanSendRawHex(s.arg); break;
     case ST_POWER:
       if (!strcasecmp(s.arg, "on"))       titanPowerOn();

@@ -122,8 +122,14 @@ String statusJson() {
   j += "\"irlast\":\""; j += irLastCode();  j += "\",";
   j += "\"link\":\"";
   j += (SERIAL_CHANNELS & CH_NATIVE_CDC) ? "native-CDC " : "";
-  j += (SERIAL_CHANNELS & CH_UART1) ? "UART1" : "";
+  j += (SERIAL_CHANNELS & CH_UART1) ? "UART1 " : "";
+  j += (SERIAL_CHANNELS & CH_UART0) ? "UART0/onboard-bridge" : "";
   j += "\",";
+  // Has the far end ever said anything at all? Without this, "power":"asleep"
+  // and "there is no serial link" are indistinguishable to any consumer of
+  // this API — which is exactly the confusion that cost an evening.
+  j += "\"linkalive\":"; j += titanLinkEverRx() ? "true" : "false"; j += ",";
+  j += "\"keychan\":\""; j += titanKeyChannelStr(); j += "\",";
   j += "\"ssid\":\"";   jesc(j, netSsid());   j += "\",";
   j += "\"ip\":\"";     j += netIp();         j += "\",";
   j += "\"ap\":";       j += netApMode() ? "true" : "false"; j += ",";
@@ -159,6 +165,11 @@ static void uiRoutes() {
   });
 
   ui.on("/api/status", HTTP_ANY, []() { okJson(ui, statusJson()); });
+  ui.on("/api/keychan", HTTP_ANY, []() {
+    String m = ui.arg("mode");
+    if (m == "hid" || m == "serial") titanSetKeyChannel(m == "hid");
+    okJson(ui, statusJson());
+  });
   ui.on("/api/log",    HTTP_ANY, []() { cors(ui); ui.send(200, "text/plain", logDump()); });
   ui.on("/api/macros", HTTP_ANY, []() { okJson(ui, macroListJson()); });
   ui.on("/api/irmaps", HTTP_ANY, []() { okJson(ui, irMapJson()); });

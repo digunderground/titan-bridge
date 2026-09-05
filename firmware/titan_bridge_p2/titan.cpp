@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include <strings.h>
 #include <stdarg.h>
+#include <Preferences.h>
 #include "titan.h"
 
 // Native USB exists only on the S3 family, and even there only when the
@@ -234,6 +235,41 @@ bool titanSendRawHex(const char *hex) {
   return true;
 }
 
+// ------------------------------ key channel --------------------------------
+
+static bool keyHid = (DEFAULT_KEY_CHANNEL == KEY_CHANNEL_HID);
+
+bool        titanKeyChannelHid() { return keyHid; }
+const char *titanKeyChannelStr() { return keyHid ? "hid" : "serial"; }
+bool        titanLinkEverRx()    { return everRx; }
+
+void titanSetKeyChannel(bool useHid) {
+  keyHid = useHid;
+  Preferences p;
+  p.begin("titan", false);
+  p.putBool("keyhid", useHid);
+  p.end();
+  tlog("key channel -> %s", titanKeyChannelStr());
+}
+
+static void keyChannelBegin() {
+  Preferences p;
+  p.begin("titan", true);
+  keyHid = p.getBool("keyhid", DEFAULT_KEY_CHANNEL == KEY_CHANNEL_HID);
+  p.end();
+}
+
+bool titanKey(const char *name) {
+  if (!keyHid) return titanSendNamed(name);
+
+  // The two vocabularies are not identical. Serial has "setting"; HID has no
+  // such usage, and the context-menu key is the nearest equivalent. Verify
+  // against docs/10-hid-key-probe.md before trusting it.
+  const char *n = name;
+  if (!strcasecmp(name, "setting")) n = "menu";
+  return titanHid(n);
+}
+
 bool titanHid(const char *name) {
 #if HAS_HID
   for (size_t i = 0; i < NHIDKEYS; i++) {
@@ -423,7 +459,12 @@ static void runPoll() {
     if (probeAnswered()) { pollMisses = 0; setPower(PWR_AWAKE); }
     else if (pollMisses < 255) {
       pollMisses++;
-      if (pollMisses >= POLL_MISSES_TO_SLEEP) setPower(PWR_ASLEEP);
+      // Silence only means "asleep" if this link has ever spoken. On a
+      // projector that never binds the adapter at all (see logs/TEST-LOG.md,
+      // Test 2) the old code reported "asleep" for a projector that was wide
+      // awake — and Home Assistant and the Roku emulation would both have
+      // believed it. Never having heard anything is PWR_UNKNOWN, not asleep.
+      if (pollMisses >= POLL_MISSES_TO_SLEEP && everRx) setPower(PWR_ASLEEP);
     }
   }
 
@@ -436,6 +477,7 @@ static void runPoll() {
 // ================================ lifecycle ================================
 
 void titanBegin() {
+  keyChannelBegin();
 #if (SERIAL_CHANNELS & CH_UART1)
   Serial1.begin(LINK_BAUD, SERIAL_8N1, P2_RX_PIN, P2_TX_PIN);
 #endif

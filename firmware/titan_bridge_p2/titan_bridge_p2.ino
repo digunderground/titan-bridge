@@ -135,7 +135,9 @@ static void help() {
   CON.println("  run <script>     run an inline script");
   CON.println("  macdef <name> <script>");
   CON.println("  macdel <name>    macabort");
-  CON.println("  script grammar:  s:<cmd>  h:<key>  r:<hex>  p:on|off  d<ms>  anchor  tok*<n>");
+  CON.println("  script grammar:  s:<cmd>  h:<key>  k:<key>  r:<hex>  p:on|off  d<ms>  anchor  tok*<n>");
+  CON.println("    k: routes through the active key channel; s:/h: force one");
+  CON.println("  keychan [serial|hid]      which channel carries navigation");
   CON.println("Infrared:");
   CON.println("  irmaps           list bindings");
   CON.println("  irmap <code> <action>     e.g. irmap 21DE:4D m:movie");
@@ -252,6 +254,12 @@ static void handleLine(char *line) {
     return;
   }
   if (!strcasecmp(line, "forget"))   { netForget(); return; }
+  if (!strcasecmp(line, "keychan")) {
+    if (arg && (!strcasecmp(arg, "hid") || !strcasecmp(arg, "serial")))
+      titanSetKeyChannel(!strcasecmp(arg, "hid"));
+    CON.print("key channel: "); CON.println(titanKeyChannelStr());
+    return;
+  }
 
   if (!titanSendNamed(line)) CON.println("unknown — type ? for help");
 }

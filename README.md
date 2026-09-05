@@ -23,6 +23,7 @@ Settings → General → Serial Port Control. Everything here is built on that.
 | mapping menus on Sunday | [`docs/05-menu-mapping-worksheet.md`](docs/05-menu-mapping-worksheet.md) |
 | holding a USB keyboard and impatient | [`docs/10-hid-key-probe.md`](docs/10-hid-key-probe.md) |
 | looking up a command | [`docs/06-command-reference.md`](docs/06-command-reference.md) |
+| testing which USB-serial adapter binds | [`docs/11-adapter-driver-test.md`](docs/11-adapter-driver-test.md) |
 | stuck | [`docs/07-troubleshooting.md`](docs/07-troubleshooting.md) |
 | wiring up the hub or Home Assistant | [`docs/08-integration.md`](docs/08-integration.md) |
 | reading the original reasoning | [`plan/titan_noir_bridge_plan.md`](plan/titan_noir_bridge_plan.md) |
