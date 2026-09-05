@@ -25,6 +25,12 @@ rest_command:
   titan_key:
     url: "http://titan-bridge.local/api/key?name={{ name }}"
     method: POST
+  # Navigation on whichever channel the bridge is set to (serial or USB HID).
+  # Prefer this over titan_cmd for arrows/OK/Back — it follows the setting
+  # instead of hardwiring one channel that may not be the working one.
+  titan_nav:
+    url: "http://titan-bridge.local/api/nav?name={{ name }}"
+    method: POST
   titan_hid:
     url: "http://titan-bridge.local/api/hid?key={{ key }}"
     method: POST
@@ -91,6 +97,21 @@ rest:
 
     binary_sensor:
       # The one thing here worth an actual alert.
+      - name: "Titan control channel"
+        unique_id: titan_keychan
+        value_template: "{{ value_json.keychan }}"
+
+      - name: "Titan serial link"
+        unique_id: titan_linkalive
+        value_template: >-
+          {{ 'alive' if value_json.linkalive else 'no valid frame ever received' }}
+
+      - name: "Titan power reading"
+        unique_id: titan_power_observed
+        # false means the power state above is tracked, not measured.
+        value_template: >-
+          {{ 'measured' if value_json.powerobserved else 'assumed' }}
+
       - name: "Titan over temperature"
         unique_id: titan_overtemp
         device_class: problem
@@ -105,9 +126,19 @@ rest:
         value_template: "{{ value_json.cdc }}"
 
 # --------------------------------------------------------------------------
-# Power. Both directions are idempotent on the bridge, so repeated calls are
-# harmless and the switch cannot get out of step with reality for longer than
-# one poll.
+# Power.
+#
+# MEASURED 2026-09-05: this projector reports nothing about its power state.
+# The temperature probe answers identically in standby, so the bridge tracks
+# what it last did and labels it "(assumed)". The switch below therefore shows
+# an assumption, not a reading, and it CAN drift — if someone uses the physical
+# remote, nothing tells Home Assistant or the bridge.
+#
+# To resync without sending anything to the projector:
+#   http://titan-bridge.local/api/power?state=sync&is=on   (or is=off)
+#
+# Serial "wake" is a genuine discrete power-on, unlike the HID power key which
+# is a toggle — see the Titan wake button below.
 # --------------------------------------------------------------------------
 switch:
   - platform: template
@@ -116,7 +147,11 @@ switch:
         unique_id: titan_projector_power
         friendly_name: "TITAN Noir"
         icon_template: mdi:projector
-        value_template: "{{ is_state('sensor.titan_power_state', 'awake') }}"
+        # "awake" only appears where a projector actually reports power.
+        # Here it is "on (assumed)" / "off (assumed)"; match both forms so this
+        # keeps working if a future unit does report state.
+        value_template: >-
+          {{ states('sensor.titan_power_state') in ['awake', 'on (assumed)'] }}
         availability_template: >-
           {{ not is_state('sensor.titan_power_state', 'unavailable') }}
         turn_on:
@@ -159,6 +194,16 @@ template:
             data: { option: "{{ option }}" }
 
   - button:
+      - name: "Titan wake"
+        unique_id: titan_wake
+        icon: mdi:power-on
+        # Discrete power-on over serial, with no toggle ambiguity. Commands are
+        # also honoured in standby, so an input can be selected first and the
+        # projector wakes straight onto it.
+        press:
+          service: rest_command.titan_cmd
+          data: { name: wake }
+
       - name: "Titan autofocus"
         unique_id: titan_autofocus
         icon: mdi:image-filter-center-focus
