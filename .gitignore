@@ -7,3 +7,10 @@ __pycache__/
 
 .env
 .tmp/
+
+# Harness artefacts — never publish. docs/graph.* is the primer's cross-project
+# knowledge graph and carries material from unrelated (including client) work;
+# .remotes.json carries push topology and operator identity.
+docs/graph.json
+docs/graph.html
+.remotes.json
