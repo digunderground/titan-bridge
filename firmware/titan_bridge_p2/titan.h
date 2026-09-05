@@ -47,9 +47,10 @@ bool        titanKeyChannelHid();
 void        titanSetKeyChannel(bool useHid);
 const char *titanKeyChannelStr();           // "serial" | "hid"
 
-// Has this serial link ever received a single byte? Distinguishes "the
-// projector is asleep" from "there is no serial link at all" — which look
-// identical from the transmit side, and cost an evening to tell apart.
+// Has this serial link ever delivered a **checksum-valid frame**? Distinguishes
+// "the projector is asleep" from "there is no serial link at all" — which look
+// identical from the transmit side, and cost an evening to tell apart. Counting
+// raw bytes is not enough: a floating UART pin produces them on its own.
 bool        titanLinkEverRx();
 
 // -------------------------------- status -----------------------------------

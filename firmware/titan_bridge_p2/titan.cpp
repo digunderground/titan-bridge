@@ -130,7 +130,8 @@ const size_t NHIDKEYS = sizeof(HIDKEYS) / sizeof(HIDKEYS[0]);
 
 static uint32_t txFrames = 0, rxBytes = 0;
 static uint32_t lastRxAt = 0;           // millis of last byte in
-static bool     everRx   = false;
+static bool     everRx   = false;   // any byte at all, including line noise
+static bool     everFrame= false;   // a checksum-valid frame — the real signal
 static int8_t   lastTemp = -1;
 static char     lastRxHex[52] = "-";
 
@@ -241,7 +242,7 @@ static bool keyHid = (DEFAULT_KEY_CHANNEL == KEY_CHANNEL_HID);
 
 bool        titanKeyChannelHid() { return keyHid; }
 const char *titanKeyChannelStr() { return keyHid ? "hid" : "serial"; }
-bool        titanLinkEverRx()    { return everRx; }
+bool        titanLinkEverRx()    { return everFrame; }
 
 void titanSetKeyChannel(bool useHid) {
   keyHid = useHid;
@@ -307,6 +308,18 @@ static void frameComplete(const uint8_t *f, uint8_t n) {
     p += snprintf(hex + p, sizeof(hex) - p, "%02X ", f[k]);
   strncpy(lastRxHex, hex, sizeof(lastRxHex) - 1);
   lastRxHex[sizeof(lastRxHex) - 1] = 0;
+
+  // Verify before believing. An unconnected UART1 pin floats and invents
+  // bytes: one of them was enough to make the bridge claim the link was alive
+  // and then report "asleep" for a projector nothing was even attached to.
+  // Liveness means a frame that checksums, not an electrical event.
+  uint16_t sum = 0;
+  for (uint8_t k = 2; k < n - 1; k++) sum += f[k];
+  if ((uint8_t)(sum & 0xFF) != f[n - 1]) {
+    tlog("RX %s BAD CHECKSUM (want %02X)", hex, (uint8_t)(sum & 0xFF));
+    return;
+  }
+  everFrame = true;
 
   // 2A 2A 03 13 01 XX CS — temperature status postback
   if (n >= 7 && f[3] == 0x13 && f[4] == 0x01) {
@@ -464,7 +477,7 @@ static void runPoll() {
       // Test 2) the old code reported "asleep" for a projector that was wide
       // awake — and Home Assistant and the Roku emulation would both have
       // believed it. Never having heard anything is PWR_UNKNOWN, not asleep.
-      if (pollMisses >= POLL_MISSES_TO_SLEEP && everRx) setPower(PWR_ASLEEP);
+      if (pollMisses >= POLL_MISSES_TO_SLEEP && everFrame) setPower(PWR_ASLEEP);
     }
   }
 
@@ -479,6 +492,9 @@ static void runPoll() {
 void titanBegin() {
   keyChannelBegin();
 #if (SERIAL_CHANNELS & CH_UART1)
+  // Bias RX to the idle-high state. Left floating with no adapter attached it
+  // picks up noise and delivers phantom bytes.
+  pinMode(P2_RX_PIN, INPUT_PULLUP);
   Serial1.begin(LINK_BAUD, SERIAL_8N1, P2_RX_PIN, P2_TX_PIN);
 #endif
 #if (SERIAL_CHANNELS & CH_NATIVE_CDC)
