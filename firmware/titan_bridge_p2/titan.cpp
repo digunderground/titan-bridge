@@ -187,6 +187,8 @@ static uint32_t lastRxAt = 0;           // millis of last byte in
 static bool     everRx   = false;   // any byte at all, including line noise
 static bool     everFrame= false;   // a checksum-valid frame — the real signal
 static uint32_t lastFrameAt = 0;    // millis of the last valid frame
+static uint8_t  lastAckInstr = 0;   // last acknowledged instruction
+static uint32_t lastAckAt = 0;      // millis of that ACK
 static int8_t   lastTemp = -1;
 static char     lastRxHex[52] = "-";
 
@@ -304,6 +306,13 @@ bool        titanKeyChannelHid() { return keyHid; }
 const char *titanKeyChannelStr() { return keyHid ? "hid" : "serial"; }
 bool        titanLinkEverRx()    { return everFrame; }
 
+// Was the given instruction acknowledged within the last `withinMs`? The
+// absence of an ACK is how an unsupported command announces itself.
+bool titanAcked(uint8_t instr, uint32_t withinMs) {
+  return lastAckAt && (lastAckInstr == (instr & 0x7F)) &&
+         (millis() - lastAckAt) <= withinMs;
+}
+
 void titanSetKeyChannel(bool useHid) {
   keyHid = useHid;
   Preferences p;
@@ -405,6 +414,35 @@ static void frameComplete(const uint8_t *f, uint8_t n) {
   }
   everFrame = true;
   lastFrameAt = millis();
+
+  // The projector repeats a status six times, ~50 ms apart, and the log ring
+  // is 60 lines — unchecked, a single poll flushes a minute of history. Collapse
+  // consecutive identical frames instead of printing each one.
+  static char     prevHex[52] = "";
+  static uint8_t  prevRepeat  = 0;
+  if (!strcmp(hex, prevHex)) {
+    if (prevRepeat < 250) prevRepeat++;
+    return;                       // counted, not printed
+  }
+  if (prevRepeat > 1) tlog("   (previous frame x%u)", prevRepeat);
+  strncpy(prevHex, hex, sizeof(prevHex) - 1);
+  prevHex[sizeof(prevHex) - 1] = 0;
+  prevRepeat = 1;
+
+  // Undocumented, discovered 2026-09-05: every command is acknowledged with
+  // the instruction ORed with 0x80 and the parameter echoed back —
+  //   TX 2A 2A 02 03 1B 20  ->  RX 2A 2A 02 83 1B A0
+  // which makes an unsupported command detectable by the *absence* of an ACK.
+  if (n >= 6 && (f[3] & 0x80)) {
+    uint8_t instr = f[3] & 0x7F;
+    const char *nm = "?";
+    for (size_t i = 0; i < NCMDS; i++)
+      if (CMDS[i].instr == instr && CMDS[i].p[0] == f[4]) { nm = CMDS[i].name; break; }
+    lastAckInstr = instr;
+    lastAckAt    = millis();
+    tlog("ACK %s instr=0x%02X %s", hex, instr, nm);
+    return;
+  }
 
   // 2A 2A 03 13 01 XX CS — temperature status postback
   if (n >= 7 && f[3] == 0x13 && f[4] == 0x01) {

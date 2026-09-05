@@ -19,6 +19,28 @@ Both projector USB ports (one 3.0, one 2.0) are documented as accepting a
 USB-to-RS232 adapter, which is what makes the two-channel architecture
 possible.
 
+## Acknowledgements — undocumented, measured 2026-09-05
+
+XGIMI's command image shows no acknowledgement. The projector sends one for
+every command it accepts:
+
+```
+2A 2A 02 <instruction | 0x80> <parameter echoed> <checksum>
+```
+
+```
+TX 2A 2A 02 03 1B 20   filmmaker      ->  RX 2A 2A 02 83 1B A0
+TX 2A 2A 02 05 07 0E   brightness 7   ->  RX 2A 2A 02 85 07 8E
+TX 2A 2A 02 13 00 15   temp           ->  RX 2A 2A 02 93 00 95
+```
+
+**An unsupported command produces no ACK**, which makes the undocumented parts
+of the parameter space testable without watching the screen — including whether
+`hdmi3` is real.
+
+A status postback (e.g. temperature) arrives **six times, ~50 ms apart**, after
+the ACK.
+
 ## Frame format
 
 ```

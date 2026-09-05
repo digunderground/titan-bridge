@@ -115,6 +115,57 @@ model, it does not bind a USB device.
 
 ---
 
+## Test 2 — serial binding: **PASSED with FTDI** — 2026-09-05
+
+`ftdi_sio` is in the projector's kernel. Third driver class tried, and the one
+that binds.
+
+DSD TECH SH-U09G (FT232RL, genuine — vendor "FTDI", unique serial `BH001L1L`),
+TTL level 3.3 V, wired TXD→GPIO18, RXD→GPIO17, GND→GND, VCC left unconnected.
+Dual path per plan §5: ESP32-S3 native USB on the projector's USB 3.0 port
+carrying HID, the FTDI cable on USB 2.0 carrying serial.
+
+```
+[83.097] TX 2A 2A 02 13 00 15
+[83.119] RX 2A 2A 02 93 00 95      <- ACK
+[83.131] RX 2A 2A 03 13 01 00 17   temp=normal
+```
+
+| Chip | Driver | Binds? |
+|---|---|---|
+| CP2102 | `cp210x` | no |
+| CH340G | `ch341` | no |
+| **FT232RL** | **`ftdi_sio`** | **YES** |
+
+The wiring was proven on the bench first each time — laptop standing in for
+the projector, frames out and replies in — so every failure was unambiguously
+the projector's driver support and not the rig.
+
+### Undocumented: every command is acknowledged
+
+XGIMI's published command image documents no acknowledgement at all. The
+projector sends one, and it is more useful than the temperature probe:
+
+```
+TX 2A 2A 02 03 1B 20    filmmaker      ->  RX 2A 2A 02 83 1B A0
+TX 2A 2A 02 05 07 0E    brightness 7   ->  RX 2A 2A 02 85 07 8E
+TX 2A 2A 02 13 00 15    temp           ->  RX 2A 2A 02 93 00 95
+```
+
+**Format: `2A 2A 02 <instruction | 0x80> <parameter echoed> <checksum>`.**
+
+So a command that is *not* supported can be detected by the absence of an ACK
+— which is a direct, non-destructive way to answer questions like whether
+`hdmi3` exists, without needing to watch the screen.
+
+### Also undocumented: status is repeated
+
+A status postback arrives **six times, ~50 ms apart**, after the ACK. Harmless,
+but it floods a 60-line log ring in about a minute, so the firmware now
+collapses consecutive identical frames.
+
+---
+
 ## SofaBaton X2 — **WORKING** — 2026-09-05
 
 The hub drives the projector. Power, navigation and macros all arrive over

@@ -58,6 +58,7 @@ const char *titanKeyChannelStr();           // "serial" | "hid"
 // identical from the transmit side, and cost an evening to tell apart. Counting
 // raw bytes is not enough: a floating UART pin produces them on its own.
 bool        titanLinkEverRx();
+bool        titanAcked(uint8_t instr, uint32_t withinMs);
 
 // USB bus state, which on a projector that suspends its host controller in
 // standby is a truer liveness signal than any polled probe: pushed rather than
