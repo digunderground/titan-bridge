@@ -37,6 +37,39 @@ bool   macroBusy();
 const char *macroCurrent();
 
 bool   macroDefine(const char *name, const char *script);  // persists
+bool   macroDefineIn(const char *name, const char *group, const char *script);
 bool   macroDelete(const char *name);
 String macroListJson();
 String macroScript(const char *name);     // "" if unknown
+String macroGroup(const char *name);      // "" if ungrouped or unknown
+
+// ------------------------------- recorder ----------------------------------
+// Capture what was actually pressed, and the real gaps between presses, then
+// save it as an ordinary macro. Nothing here is a separate execution path: a
+// recorded macro is a normal script and stays editable as text.
+void     recStart();
+void     recStop();
+void     recClear();
+bool     recActive();
+uint16_t recCount();
+void     recCapture(const char *tok);     // called from the dispatch points
+void     recSuppressNext();               // skip exactly one inner capture
+void     recSuppressClear();
+bool     recDeleteStep(uint16_t idx);
+bool     recInsertStep(uint16_t idx, const char *tok, uint16_t gap);
+String   recJson();
+String   recScript();
+bool     recSaveAs(const char *name, const char *group);
+
+// --------------------------- button assignments ----------------------------
+// The virtual remote's buttons are data. Each id maps to a label and an action,
+// where an action is any macro script fragment: "k:up", "m:movie night", "s:hdmi1".
+bool   buttonSet(const char *id, const char *label, const char *action);
+bool   buttonClear(const char *id);
+String buttonsJson();
+String buttonAction(const char *id);
+
+// ------------------------------ Roku apps ----------------------------------
+String macroAppsXml();                    // user macros as <app> entries
+bool   macroRunAppId(int id);             // launch by the id published above
+String macroNameByIndex(int idx);

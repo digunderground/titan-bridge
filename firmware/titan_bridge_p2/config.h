@@ -184,6 +184,11 @@
 // Macro timing (plan §6). The OSD animates; commands sent mid-transition get
 // eaten. These are starting points — tune per macro, fastest reliable value.
 // --------------------------------------------------------------------------
+// NVS caps a single string near 4 kB. Two stores keep macros and button
+// assignments from competing for the same budget.
+#define MACRO_STORE_MAX         3800
+#define BUTTON_STORE_MAX        2000
+
 #define MACRO_STEP_MS            220    // default gap between macro steps
 #define MACRO_ANCHOR_MS          400    // gap during the anchor sequence
 #define MACRO_MAX_STEPS          128

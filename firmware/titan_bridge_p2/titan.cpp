@@ -3,6 +3,7 @@
 #include <stdarg.h>
 #include <Preferences.h>
 #include "titan.h"
+#include "macros.h"
 
 // Native USB exists only on the S3 family, and even there only when the
 // connector is wired to the S3's own D+/D- rather than to an onboard bridge
@@ -274,6 +275,7 @@ bool titanSendNamed(const char *name) {
   const Cmd *c = titanFindCmd(name);
   if (!c) return false;
   titanSendCmd(c->instr, c->p, c->plen);
+  recCapture((String("s:") + name).c_str());
   return true;
 }
 
@@ -318,14 +320,23 @@ static void keyChannelBegin() {
 }
 
 bool titanKey(const char *name) {
-  if (!keyHid) return titanSendNamed(name);
+  // Record the channel-neutral form: a macro recorded while driving HID stays
+  // correct if the same projector is later driven over serial, because k:
+  // resolves at run time rather than at record time.
+  recCapture((String("k:") + name).c_str());
+  recSuppressNext();
 
-  // The two vocabularies are not identical. Serial has "setting"; HID has no
-  // such usage, and the context-menu key is the nearest equivalent. Verify
-  // against docs/10-hid-key-probe.md before trusting it.
-  const char *n = name;
-  if (!strcasecmp(name, "setting")) n = "menu";
-  return titanHid(n);
+  bool ok;
+  if (!keyHid) {
+    ok = titanSendNamed(name);
+  } else {
+    // The two vocabularies are not identical. Serial has "setting"; on HID the
+    // key that opens this projector's OSD is Home (0x4A), bound as "menu".
+    const char *n = (!strcasecmp(name, "setting")) ? "menu" : name;
+    ok = titanHid(n);
+  }
+  recSuppressClear();   // in case the dispatch returned before capturing
+  return ok;
 }
 
 bool titanHidRaw(uint8_t usage) {
@@ -350,6 +361,7 @@ bool titanHid(const char *name) {
       delay(30);
       KB.releaseRaw(HIDKEYS[i].usage);
       tlog("HID %s (0x%02X)", HIDKEYS[i].name, HIDKEYS[i].usage);
+      recCapture((String("h:") + HIDKEYS[i].name).c_str());
       return true;
     }
   }

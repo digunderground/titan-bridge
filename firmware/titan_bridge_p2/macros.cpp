@@ -47,6 +47,9 @@ static const size_t NBUILTINS = sizeof(BUILTINS) / sizeof(BUILTINS[0]);
 static Preferences prefs;
 static String userStore;
 
+static void buttonsLoad();   // defined with the button store, below
+static bool compileAppend(const char *script);   // defined below pushToken
+
 static void storeLoad() {
   prefs.begin("titan", true);
   userStore = prefs.getString("macros", "");
@@ -74,11 +77,24 @@ static int storeFind(const char *name, int *lineEnd = NULL) {
   return -1;
 }
 
+// Lines are "name\tgroup\tscript". Records written before groups existed are
+// "name\tscript" and are still read correctly — an old store is not a
+// migration, just a group of "".
+static void splitLine(const String &line, String &name, String &group, String &script) {
+  int t1 = line.indexOf('\t');
+  if (t1 < 0) { name = line; group = ""; script = ""; return; }
+  name = line.substring(0, t1);
+  int t2 = line.indexOf('\t', t1 + 1);
+  if (t2 < 0) { group = ""; script = line.substring(t1 + 1); return; }
+  group  = line.substring(t1 + 1, t2);
+  script = line.substring(t2 + 1);
+}
+
 String macroScript(const char *name) {
   int e, i = storeFind(name, &e);
   if (i >= 0) {
-    int tab = userStore.indexOf('\t', i);
-    return userStore.substring(tab + 1, e);
+    String n, g, sc; splitLine(userStore.substring(i, e), n, g, sc);
+    return sc;
   }
   for (size_t k = 0; k < NBUILTINS; k++)
     if (!strcasecmp(name, BUILTINS[k].name)) return String(BUILTINS[k].script);
@@ -86,13 +102,32 @@ String macroScript(const char *name) {
 }
 
 bool macroDefine(const char *name, const char *script) {
+  return macroDefineIn(name, "", script);
+}
+
+String macroGroup(const char *name) {
+  int e, i = storeFind(name, &e);
+  if (i < 0) return String();
+  String n, g, sc; splitLine(userStore.substring(i, e), n, g, sc);
+  return g;
+}
+
+bool macroDefineIn(const char *name, const char *group, const char *script) {
   if (!name || !*name || !script || !*script) return false;
   if (strchr(name, '\t') || strchr(name, '\n')) return false;
+  if (group && (strchr(group, '\t') || strchr(group, '\n'))) return false;
+  String keep = userStore;
   macroDelete(name);
-  userStore += String(name) + "\t" + script + "\n";
-  if (userStore.length() > 3500) { tlog("macro store full"); return false; }
+  userStore += String(name) + "\t" + (group ? group : "") + "\t" + script + "\n";
+  if (userStore.length() > MACRO_STORE_MAX) {
+    userStore = keep;                      // put it back rather than truncate
+    tlog("macro store full (%u bytes) — '%s' NOT saved",
+         (unsigned)userStore.length(), name);
+    return false;
+  }
   storeSave();
-  tlog("macro '%s' saved", name);
+  tlog("macro '%s' saved%s%s", name, (group && *group) ? " in group " : "",
+       (group && *group) ? group : "");
   return true;
 }
 
@@ -124,9 +159,11 @@ String macroListJson() {
     if (t > i && t < e) {
       if (!first) out += ',';
       first = false;
-      out += "{\"name\":\""; jsonEscapeInto(out, userStore.substring(i, t));
+      String n, g, sc; splitLine(userStore.substring(i, e), n, g, sc);
+      out += "{\"name\":\""; jsonEscapeInto(out, n);
+      out += "\",\"group\":\""; jsonEscapeInto(out, g);
       out += "\",\"user\":true,\"desc\":\"saved\",\"script\":\"";
-      jsonEscapeInto(out, userStore.substring(t + 1, e));
+      jsonEscapeInto(out, sc);
       out += "\"}";
     }
     i = e + 1;
@@ -136,7 +173,7 @@ String macroListJson() {
     if (!first) out += ',';
     first = false;
     out += "{\"name\":\""; out += BUILTINS[k].name;
-    out += "\",\"user\":false,\"desc\":\""; jsonEscapeInto(out, String(BUILTINS[k].desc));
+    out += "\",\"group\":\"built-in\",\"user\":false,\"desc\":\""; jsonEscapeInto(out, String(BUILTINS[k].desc));
     out += "\",\"script\":\""; jsonEscapeInto(out, String(BUILTINS[k].script));
     out += "\"}";
   }
@@ -201,6 +238,19 @@ static bool pushToken(const char *tok) {
   if (!strncasecmp(tok, "s:", 2)) return pushStep(ST_SERIAL, tok + 2, 0);
   if (!strncasecmp(tok, "h:", 2)) return pushStep(ST_HID,    tok + 2, 0);
   if (!strncasecmp(tok, "k:", 2)) return pushStep(ST_KEY,    tok + 2, 0);
+  // m:<name> inlines another macro, so a button can be bound to one by name
+  // and grouped macros can share a common opening. One level only — deeper
+  // nesting is how you get a script that never terminates.
+  if (!strncasecmp(tok, "m:", 2)) {
+    static bool inlining = false;
+    if (inlining) { tlog("macro: refusing nested m:%s", tok + 2); return false; }
+    String sub = macroScript(tok + 2);
+    if (!sub.length()) { tlog("macro: no such macro '%s'", tok + 2); return false; }
+    inlining = true;
+    bool ok = compileAppend(sub.c_str());
+    inlining = false;
+    return ok;
+  }
   if (!strncasecmp(tok, "r:", 2)) return pushStep(ST_RAW,    tok + 2, 0);
   if (!strncasecmp(tok, "p:", 2)) return pushStep(ST_POWER,  tok + 2, 0);
 
@@ -208,8 +258,10 @@ static bool pushToken(const char *tok) {
   return pushStep(ST_SERIAL, tok, 0);
 }
 
-static bool compile(const char *script) {
-  nSteps = curStep = 0;
+// Appends to the step list already under construction. compile() resets first;
+// m: calls this directly so an inlined macro extends the caller's script
+// instead of wiping it.
+static bool compileAppend(const char *script) {
   char tok[40];
   const char *p = script;
   while (*p) {
@@ -231,6 +283,12 @@ static bool compile(const char *script) {
       if (r + 1 < rep) pushStep(ST_DELAY, NULL, MACRO_STEP_MS);
     }
   }
+  return true;
+}
+
+static bool compile(const char *script) {
+  nSteps = curStep = 0;
+  if (!compileAppend(script)) return false;
   return nSteps > 0;
 }
 
@@ -283,7 +341,242 @@ void macrosLoop() {
 
 void macrosBegin() {
   storeLoad();
+  buttonsLoad();
   int n = 0;
   for (int i = 0; i < (int)userStore.length(); i++) if (userStore[i] == '\n') n++;
   tlog("macros: %u built-in, %d saved", (unsigned)NBUILTINS, n);
+}
+
+
+// ===========================================================================
+// Recorder
+//
+// Counting keypresses off photographs works, but doing it by hand is the
+// tedious part of this project. Recording captures what you actually pressed
+// *and how long you waited* — which also settles MACRO_STEP_MS empirically
+// instead of by guessing, because the gaps are the ones the OSD kept up with.
+// ===========================================================================
+
+struct RecStep { String tok; uint16_t gap; };
+static RecStep  recBuf[MACRO_MAX_STEPS];
+static uint16_t recN = 0;
+static bool     recOn = false;
+static uint32_t recLast = 0;
+
+// titanKey() records the channel-neutral "k:" form itself, then dispatches to
+// titanHid()/titanSendNamed(), which would each record their own token. One
+// press should be one step, so the inner capture is suppressed for that call.
+static bool recSuppress = false;
+void recSuppressNext()  { recSuppress = true; }
+void recSuppressClear() { recSuppress = false; }
+
+bool recActive() { return recOn; }
+uint16_t recCount() { return recN; }
+
+void recStart() { recOn = true;  recLast = millis(); tlog("recording started"); }
+void recStop()  { recOn = false; tlog("recording stopped, %u step(s)", recN); }
+void recClear() { recN = 0; recLast = millis(); tlog("recording cleared"); }
+
+void recCapture(const char *tok) {
+  if (recSuppress) { recSuppress = false; return; }
+  // A running macro drives the same dispatch points; capturing those would
+  // record the macro playing itself back.
+  if (!recOn || macroBusy() || recN >= MACRO_MAX_STEPS) return;
+  uint32_t now = millis();
+  uint32_t gap = now - recLast;
+  recLast = now;
+  if (gap > 10000) gap = 10000;            // a coffee break is not a delay
+  recBuf[recN].tok = tok;
+  recBuf[recN].gap = (uint16_t)((recN == 0) ? 0 : ((gap + 5) / 10) * 10);
+  recN++;
+}
+
+bool recDeleteStep(uint16_t idx) {
+  if (idx >= recN) return false;
+  for (uint16_t i = idx; i + 1 < recN; i++) recBuf[i] = recBuf[i + 1];
+  recN--;
+  return true;
+}
+
+bool recInsertStep(uint16_t idx, const char *tok, uint16_t gap) {
+  if (recN >= MACRO_MAX_STEPS || idx > recN) return false;
+  for (uint16_t i = recN; i > idx; i--) recBuf[i] = recBuf[i - 1];
+  recBuf[idx].tok = tok;
+  recBuf[idx].gap = gap;
+  recN++;
+  return true;
+}
+
+String recJson() {
+  String out = "{\"recording\":"; out += recOn ? "true" : "false";
+  out += ",\"steps\":[";
+  for (uint16_t i = 0; i < recN; i++) {
+    if (i) out += ',';
+    out += "{\"tok\":\""; jsonEscapeInto(out, recBuf[i].tok);
+    out += "\",\"gap\":"; out += recBuf[i].gap; out += '}';
+  }
+  out += "]}";
+  return out;
+}
+
+String recScript() {
+  String sc;
+  for (uint16_t i = 0; i < recN; i++) {
+    if (i) {
+      sc += "; ";
+      if (recBuf[i].gap >= 20) { sc += 'd'; sc += recBuf[i].gap; sc += "; "; }
+    }
+    sc += recBuf[i].tok;
+  }
+  return sc;
+}
+
+bool recSaveAs(const char *name, const char *group) {
+  if (!recN) return false;
+  String sc = recScript();
+  return macroDefineIn(name, group ? group : "", sc.c_str());
+}
+
+// ===========================================================================
+// Button assignments — the virtual remote's buttons are data, not code.
+// ===========================================================================
+
+static String buttonStore;
+
+static void buttonsLoad() {
+  prefs.begin("titan", true);
+  buttonStore = prefs.getString("buttons", "");
+  prefs.end();
+}
+static void buttonsSave() {
+  prefs.begin("titan", false);
+  prefs.putString("buttons", buttonStore);
+  prefs.end();
+}
+
+static int buttonFind(const char *id, int *lineEnd = NULL) {
+  String key = String(id) + "\t";
+  int i = 0;
+  while (i < (int)buttonStore.length()) {
+    int e = buttonStore.indexOf('\n', i);
+    if (e < 0) e = buttonStore.length();
+    if (buttonStore.substring(i, e).startsWith(key)) {
+      if (lineEnd) *lineEnd = e;
+      return i;
+    }
+    i = e + 1;
+  }
+  return -1;
+}
+
+bool buttonClear(const char *id) {
+  int e, i = buttonFind(id, &e);
+  if (i < 0) return false;
+  buttonStore.remove(i, (e < (int)buttonStore.length() ? e + 1 : e) - i);
+  buttonsSave();
+  return true;
+}
+
+bool buttonSet(const char *id, const char *label, const char *action) {
+  if (!id || !*id) return false;
+  if (strchr(id, '\t') || strchr(id, '\n')) return false;
+  buttonClear(id);
+  if (!action || !*action) { buttonsSave(); return true; }   // cleared
+  String keep = buttonStore;
+  buttonStore += String(id) + "\t" + (label ? label : "") + "\t" + action + "\n";
+  if (buttonStore.length() > BUTTON_STORE_MAX) {
+    buttonStore = keep;
+    tlog("button store full — '%s' NOT saved", id);
+    return false;
+  }
+  buttonsSave();
+  return true;
+}
+
+String buttonAction(const char *id) {
+  int e, i = buttonFind(id, &e);
+  if (i < 0) return String();
+  String bid, label, action;
+  splitLine(buttonStore.substring(i, e), bid, label, action);
+  return action;
+}
+
+String buttonsJson() {
+  String out = "[";
+  bool first = true;
+  int i = 0;
+  while (i < (int)buttonStore.length()) {
+    int e = buttonStore.indexOf('\n', i); if (e < 0) e = buttonStore.length();
+    String id, label, action;
+    splitLine(buttonStore.substring(i, e), id, label, action);
+    if (id.length()) {
+      if (!first) out += ',';
+      first = false;
+      out += "{\"id\":\""; jsonEscapeInto(out, id);
+      out += "\",\"label\":\""; jsonEscapeInto(out, label);
+      out += "\",\"action\":\""; jsonEscapeInto(out, action);
+      out += "\"}";
+    }
+    i = e + 1;
+  }
+  out += ']';
+  return out;
+}
+
+
+// ===========================================================================
+// Roku "apps" — how anything beyond the fixed ECP key map reaches the hub.
+//
+// The SofaBaton's Roku profile gives a fixed button layout, so a macro has no
+// key to live on. But Roku also has apps, and a hub can launch one by id. Each
+// user macro is therefore published as an app, which turns "run my 3D macro"
+// into something the hub can actually send.
+// ===========================================================================
+
+#define MACRO_APP_BASE 100
+
+String macroNameByIndex(int idx) {
+  int i = 0, n = 0;
+  while (i < (int)userStore.length()) {
+    int e = userStore.indexOf('\n', i); if (e < 0) e = userStore.length();
+    String nm, g, sc; splitLine(userStore.substring(i, e), nm, g, sc);
+    if (nm.length()) {
+      if (n == idx) return nm;
+      n++;
+    }
+    i = e + 1;
+  }
+  return String();
+}
+
+String macroAppsXml() {
+  String x;
+  int i = 0, n = 0;
+  while (i < (int)userStore.length()) {
+    int e = userStore.indexOf('\n', i); if (e < 0) e = userStore.length();
+    String nm, g, sc; splitLine(userStore.substring(i, e), nm, g, sc);
+    if (nm.length()) {
+      x += "<app id=\""; x += (MACRO_APP_BASE + n);
+      x += "\" type=\"appl\" version=\"1.0.0\">";
+      // XML text, so the few characters that would break the document.
+      for (size_t c = 0; c < nm.length(); c++) {
+        char ch = nm[c];
+        if      (ch == '&') x += "&amp;";
+        else if (ch == '<') x += "&lt;";
+        else if (ch == '>') x += "&gt;";
+        else x += ch;
+      }
+      x += "</app>";
+      n++;
+    }
+    i = e + 1;
+  }
+  return x;
+}
+
+bool macroRunAppId(int id) {
+  if (id < MACRO_APP_BASE) return false;
+  String nm = macroNameByIndex(id - MACRO_APP_BASE);
+  if (!nm.length()) return false;
+  return macroRun(nm.c_str());
 }

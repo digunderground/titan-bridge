@@ -224,6 +224,52 @@ static void uiRoutes() {
     okText(ui, macroRun(n.c_str()) ? "ok" : "no such macro (or busy)");
   });
   ui.on("/api/macabort", HTTP_ANY, []() { macroAbort(); okText(ui, "ok"); });
+
+  // ------------------------------ recorder --------------------------------
+  ui.on("/api/rec", HTTP_ANY, []() {
+    String st = argOr(ui, "state");
+    if      (st == "start") recStart();
+    else if (st == "stop")  recStop();
+    else if (st == "clear") recClear();
+    else if (st == "save") {
+      String n = argOr(ui, "name"), g = argOr(ui, "group");
+      if (!n.length())               { okText(ui, "name required"); return; }
+      if (!recSaveAs(n.c_str(), g.c_str())) { okText(ui, "nothing recorded, or store full"); return; }
+    }
+    okJson(ui, recJson());
+  });
+  ui.on("/api/recstep", HTTP_ANY, []() {
+    String op = argOr(ui, "op");
+    long idx  = argOr(ui, "idx", "0").toInt();
+    if (op == "del") recDeleteStep((uint16_t)idx);
+    else if (op == "ins") {
+      String tok = argOr(ui, "tok");
+      long gap   = argOr(ui, "gap", "0").toInt();
+      if (tok.length()) recInsertStep((uint16_t)idx, tok.c_str(), (uint16_t)gap);
+    }
+    okJson(ui, recJson());
+  });
+
+  // -------------------------- button assignments ---------------------------
+  ui.on("/api/buttons", HTTP_ANY, []() { okJson(ui, buttonsJson()); });
+  ui.on("/api/button", HTTP_ANY, []() {
+    String id = argOr(ui, "id");
+    if (!id.length()) { okText(ui, "id required"); return; }
+    buttonSet(id.c_str(), argOr(ui, "label").c_str(), argOr(ui, "action").c_str());
+    okJson(ui, buttonsJson());
+  });
+  ui.on("/api/press", HTTP_ANY, []() {
+    String id = argOr(ui, "id");
+    String a  = buttonAction(id.c_str());
+    if (!a.length()) { okText(ui, "unassigned"); return; }
+    okText(ui, macroRunScript(a.c_str()) ? "ok" : "script failed");
+  });
+  ui.on("/api/macgroup", HTTP_ANY, []() {   // move a macro between groups
+    String n = argOr(ui, "name"), g = argOr(ui, "group");
+    String sc = macroScript(n.c_str());
+    if (!sc.length()) { okText(ui, "no such macro"); return; }
+    okText(ui, macroDefineIn(n.c_str(), g.c_str(), sc.c_str()) ? "ok" : "failed");
+  });
   ui.on("/api/macdef", HTTP_ANY, []() {
     okText(ui, macroDefine(argOr(ui, "name").c_str(), argOr(ui, "script").c_str())
                ? "saved" : "bad name or script");
@@ -330,13 +376,20 @@ static void ecpRoutes() {
     ecp.send(200, "text/xml; charset=\"utf-8\"", deviceInfoXml());
   });
   ecp.on("/query/apps", HTTP_GET, []() {
-    ecp.send(200, "text/xml; charset=\"utf-8\"",
-      F("<apps>"
-        "<app id=\"1\" type=\"appl\" version=\"1.0.0\">HDMI1</app>"
-        "<app id=\"2\" type=\"appl\" version=\"1.0.0\">HDMI2</app>"
-        "<app id=\"3\" type=\"appl\" version=\"1.0.0\">HDMI3</app>"
-        "<app id=\"4\" type=\"appl\" version=\"1.0.0\">USB</app>"
-        "</apps>"));
+    // Inputs 1-4 are serial commands. On a projector whose serial daemon never
+    // binds they do nothing, so publishing them would put four dead buttons on
+    // the hub's remote. Macros are published either way, which is how anything
+    // beyond the fixed key map reaches the SofaBaton at all.
+    String x = "<apps>";
+    if (titanLinkEverRx()) {
+      x += F("<app id=\"1\" type=\"appl\" version=\"1.0.0\">HDMI1</app>"
+             "<app id=\"2\" type=\"appl\" version=\"1.0.0\">HDMI2</app>"
+             "<app id=\"3\" type=\"appl\" version=\"1.0.0\">HDMI3</app>"
+             "<app id=\"4\" type=\"appl\" version=\"1.0.0\">USB</app>");
+    }
+    x += macroAppsXml();
+    x += "</apps>";
+    ecp.send(200, "text/xml; charset=\"utf-8\"", x);
   });
   ecp.on("/query/active-app", HTTP_GET, []() {
     ecp.send(200, "text/xml; charset=\"utf-8\"",
@@ -369,6 +422,8 @@ static void ecpRoutes() {
 
     String app = tail("/launch/");
     if (app.length()) {
+      long id = app.toInt();
+      if (macroRunAppId((int)id)) { ecp.send(200, "text/plain", ""); return; }
       if      (app.startsWith("1")) titanSendNamed("hdmi1");
       else if (app.startsWith("2")) titanSendNamed("hdmi2");
       else if (app.startsWith("3")) titanSendNamed("hdmi3");
