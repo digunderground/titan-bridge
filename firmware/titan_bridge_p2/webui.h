@@ -101,6 +101,19 @@ nav.tabs button.sel{color:var(--tx);border-bottom-color:var(--ac)}
 .rocker button{border:0;border-radius:0;background:none;padding:9px 15px}
 .rocker span{height:1px;background:#2c3346}
 .rlabel{text-align:center;font-size:10px;color:var(--dim);letter-spacing:.1em;text-transform:uppercase}
+/* assigned buttons: shape and colour are stored per button */
+.ubtn{display:inline-flex;align-items:center;gap:7px}
+.ubtn .ico{font-size:16px;line-height:1}
+.ubtn.circ{flex-direction:column;gap:2px;font-size:11px}
+.ubtn.circ .ico{font-size:19px}
+.c-accent{background:#1d3a5c;border-color:#2f5f96;color:#bfe0ff}
+.c-red{background:#4a1620;border-color:#7a2634;color:#ff8b96}
+.c-green{background:#12402f;border-color:#1e6b4d;color:#8ff0c8}
+.c-purple{background:#2f1f5c;border-color:#503a96;color:#c9b6ff}
+.c-amber{background:#4a3512;border-color:#7a5a1e;color:#ffd28b}
+.iconpick{display:flex;flex-wrap:wrap;gap:6px}
+.iconpick button{width:38px;height:38px;padding:0;font-size:18px;border-radius:9px}
+.iconpick button.sel{border-color:var(--ac);background:#1d3a5c}
 .warn{color:var(--wn)}
 </style>
 <header>
@@ -165,9 +178,41 @@ nav.tabs button.sel{color:var(--tx);border-bottom-color:var(--ac)}
     <div class=grid id=mybtns></div>
     <div class=row style=margin-top:10px>
       <button id=editbtn onclick=toggleEdit()>Edit</button>
-      <button id=addbtn class="hide" onclick=addButton()>+ Add button</button>
-      <span class=sub>Assign any action: a key (<code>k:up</code>), a macro
-        (<code>m:movie</code>), or a serial command (<code>s:hdmi1</code>).</span>
+      <button id=addbtn class="hide" onclick="beOpen(null)">+ Add button</button>
+      <span class=sub id=btnhint></span>
+    </div>
+  </div>
+
+  <div class=card id=beCard style=display:none>
+    <h2 id=beTitle>Add button</h2>
+    <div class=row><input id=beLabel placeholder="Label — e.g. Movie night" oninput=bePreview()></div>
+
+    <p class=sub style="margin:12px 0 4px">Does what</p>
+    <div class=row><select id=beAction onchange=beActionChanged()></select></div>
+    <div class=row id=beCustomRow style="display:none;margin-top:8px">
+      <input id=beCustom placeholder="k:down*3; d400; k:ok">
+    </div>
+
+    <p class=sub style="margin:12px 0 4px">Icon</p>
+    <div class=iconpick id=beIcons></div>
+
+    <p class=sub style="margin:12px 0 4px">Look</p>
+    <div class=row>
+      <select id=beShape onchange=bePreview()>
+        <option value=pill>Pill</option><option value=circle>Circle</option>
+      </select>
+      <select id=beColour onchange=bePreview()>
+        <option value=default>Grey</option><option value=accent>Blue</option>
+        <option value=purple>Purple</option><option value=green>Green</option>
+        <option value=amber>Amber</option><option value=red>Red</option>
+      </select>
+      <span class=sub>Preview:</span><span id=bePrev></span>
+    </div>
+
+    <div class=row style="margin-top:14px">
+      <button class=pri onclick=beSave()>Save</button>
+      <button onclick=beClose()>Cancel</button>
+      <button class=dg id=beDel style=display:none onclick=beDelete()>Delete</button>
     </div>
   </div>
 </main>
@@ -411,41 +456,119 @@ async function delMacro(n){
 }
 
 /* --------------------------- my buttons ------------------------------ */
-let editMode=false;
+/* Assigning a button is a form, not a chain of prompts: the actions that
+   exist are known, so they should be picked rather than typed correctly. */
+const ICONS=['','\u{1F3AC}','\u{1F3A5}','\u{1F37F}','\u{1F4FA}','\u{1F50A}','\u{1F507}',
+ '\u{1F4A1}','\u{1F319}','\u{2600}\u{FE0F}','\u2699\u{FE0F}','\u25B6\u{FE0F}','\u23F8\u{FE0F}',
+ '\u{1F3E0}','\u{1F3AE}','\u{1F506}','\u{1F505}','\u{1F4D0}','\u{1F3AF}','\u2B50','\u26A1'];
+const BUILTIN_ACTIONS=[
+  ['Power',[['p:on','Power on'],['p:off','Power off'],['p:toggle','Power toggle']]],
+  ['Navigation',[['k:up','Up'],['k:down','Down'],['k:left','Left'],['k:right','Right'],
+                 ['k:ok','OK'],['k:back','Back'],['k:menu','Menu']]],
+  ['Sound & lens',[['k:volup','Volume +'],['k:voldn','Volume −'],['k:mute','Mute'],
+                   ['h:focus+','Focus +'],['h:focus-','Focus −']]],
+  ['Serial (only if the serial link works)',
+    [['s:hdmi1','HDMI1'],['s:hdmi2','HDMI2'],['s:hdmi3','HDMI3'],['s:usbsrc','USB source'],
+     ['s:filmmaker','Filmmaker'],['s:movie','Movie'],['s:vivid','Vivid'],
+     ['s:blank','Blank'],['s:unblank','Unblank']]]];
+
+let editMode=false, beId=null, beIcon='';
+
 function toggleEdit(){
   editMode=!editMode;
   $('editbtn').textContent=editMode?'Done':'Edit';
   $('editbtn').className=editMode?'on':'';
   $('addbtn').classList.toggle('hide',!editMode);
-  $('editnote').textContent=editMode?'— click a button to reassign it':'';
+  $('btnhint').textContent=editMode?'Click a button to change it.':'';
+  if(!editMode)beClose();
   loadButtons();
+}
+
+function btnFace(x){
+  const [shape,colour]=(x.style||'pill:default').split(':');
+  const cls='ubtn '+(shape==='circle'?'circ':'pillb')+' c-'+(colour||'default');
+  const ico=x.icon?`<span class=ico>${esc(x.icon)}</span>`:'';
+  const txt=esc(x.label||x.id);
+  return {cls,inner:ico+`<span>${txt}</span>`};
 }
 async function loadButtons(){
   let b;try{b=await (await fetch('/api/buttons')).json();}catch(e){return;}
-  $('mybtns').innerHTML=b.length?b.map(x=>
-    `<button onclick="${editMode?`editButton('${esc(x.id)}')`:`go('/api/press?id=${encodeURIComponent(x.id)}')`}">
-       ${esc(x.label||x.id)}</button>`).join('')
-    :'<span class=sub>none yet — press Edit, then Add button</span>';
+  window._btns=b;
+  $('mybtns').innerHTML=b.length?b.map(x=>{
+    const f=btnFace(x);
+    const act=editMode?`beOpen('${esc(x.id)}')`:`go('/api/press?id=${encodeURIComponent(x.id)}')`;
+    return `<button class="${f.cls}" onclick="${act}">${f.inner}</button>`;
+  }).join(''):'<span class=sub>none yet — press Edit, then Add button</span>';
 }
-async function addButton(){
-  const id='b'+Date.now().toString(36);
-  const label=prompt('Button label (e.g. HDMI1, Movie night):'); if(!label)return;
-  const action=prompt('Action (k:up, m:movie night, s:hdmi1):'); if(!action)return;
-  await fetch('/api/button?id='+id+'&label='+encodeURIComponent(label)
-    +'&action='+encodeURIComponent(action),{method:'POST'});
-  loadButtons();
+
+async function beOpen(id){
+  beId=id;
+  const b=window._btns||[];
+  const cur=id?(b.find(x=>x.id===id)||{}):{};
+  $('beTitle').textContent=id?'Edit button':'Add button';
+  $('beDel').style.display=id?'':'none';
+  $('beLabel').value=cur.label||'';
+  beIcon=cur.icon||'';
+  const st=(cur.style||'pill:default').split(':');
+  $('beShape').value=st[0]||'pill';
+  $('beColour').value=st[1]||'default';
+
+  /* action list: existing macros first — the common case is binding one */
+  let macs=window._macs;
+  if(!macs){try{macs=await (await fetch('/api/macros')).json();window._macs=macs;}catch(e){macs=[];}}
+  let html='';
+  if(macs.length){
+    html+='<optgroup label="Macros">'+macs.map(m=>
+      `<option value="m:${esc(m.name)}">${esc(m.name)}</option>`).join('')+'</optgroup>';
+  }
+  for(const [grp,items] of BUILTIN_ACTIONS){
+    html+=`<optgroup label="${esc(grp)}">`+items.map(([a,l])=>
+      `<option value="${esc(a)}">${esc(l)}</option>`).join('')+'</optgroup>';
+  }
+  html+='<optgroup label="Other"><option value="__custom">Custom script…</option></optgroup>';
+  $('beAction').innerHTML=html;
+
+  const known=[...$('beAction').options].some(o=>o.value===cur.action);
+  $('beAction').value=cur.action&&known?cur.action:(cur.action?'__custom':$('beAction').options[0].value);
+  $('beCustom').value=cur.action&&!known?cur.action:'';
+  beActionChanged();
+
+  $('beIcons').innerHTML=ICONS.map(ic=>
+    `<button class="${ic===beIcon?'sel':''}" onclick="beSetIcon('${ic}')">${ic||'∅'}</button>`).join('');
+  bePreview();
+  $('beCard').style.display='';
+  $('beCard').scrollIntoView({behavior:'smooth',block:'center'});
 }
-async function editButton(id){
-  const b=await (await fetch('/api/buttons')).json();
-  const cur=b.find(x=>x.id===id)||{};
-  const label=prompt('Label (empty to delete):',cur.label||'');
-  if(label===null)return;
-  if(!label){await fetch('/api/button?id='+id+'&label=&action=',{method:'POST'});return loadButtons();}
-  const action=prompt('Action:',cur.action||'');
-  if(action===null)return;
-  await fetch('/api/button?id='+id+'&label='+encodeURIComponent(label)
-    +'&action='+encodeURIComponent(action),{method:'POST'});
-  loadButtons();
+function beSetIcon(ic){beIcon=ic;
+  $('beIcons').innerHTML=ICONS.map(i=>
+    `<button class="${i===beIcon?'sel':''}" onclick="beSetIcon('${i}')">${i||'∅'}</button>`).join('');
+  bePreview();}
+function beActionChanged(){
+  $('beCustomRow').style.display=$('beAction').value==='__custom'?'':'none';
+}
+function bePreview(){
+  const f=btnFace({label:$('beLabel').value||'Button',icon:beIcon,
+                   style:$('beShape').value+':'+$('beColour').value});
+  $('bePrev').innerHTML=`<button class="${f.cls}">${f.inner}</button>`;
+}
+function beClose(){$('beCard').style.display='none';beId=null;}
+async function beSave(){
+  const label=$('beLabel').value.trim();
+  if(!label)return alert('Give it a label.');
+  let action=$('beAction').value;
+  if(action==='__custom')action=$('beCustom').value.trim();
+  if(!action)return alert('Pick or type an action.');
+  const id=beId||('b'+Date.now().toString(36));
+  const style=$('beShape').value+':'+$('beColour').value;
+  await fetch('/api/button?id='+encodeURIComponent(id)
+    +'&label='+encodeURIComponent(label)+'&action='+encodeURIComponent(action)
+    +'&icon='+encodeURIComponent(beIcon)+'&style='+encodeURIComponent(style),{method:'POST'});
+  beClose();loadButtons();
+}
+async function beDelete(){
+  if(!beId||!confirm('Delete this button?'))return;
+  await fetch('/api/button?id='+encodeURIComponent(beId)+'&label=&action=',{method:'POST'});
+  beClose();loadButtons();
 }
 
 /* ------------------------------ serial ------------------------------- */

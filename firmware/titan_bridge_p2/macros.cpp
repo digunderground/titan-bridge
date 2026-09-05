@@ -477,13 +477,27 @@ bool buttonClear(const char *id) {
   return true;
 }
 
-bool buttonSet(const char *id, const char *label, const char *action) {
+// Fields: id, label, action, icon, style. Anything shorter is an older record
+// and reads back with empty trailing fields rather than needing a migration.
+static void splitFields(const String &line, String *out, int n) {
+  int start = 0;
+  for (int i = 0; i < n; i++) {
+    if (start > (int)line.length()) { out[i] = ""; continue; }
+    int t = (i == n - 1) ? -1 : line.indexOf('\t', start);
+    if (t < 0) { out[i] = line.substring(start); start = line.length() + 1; }
+    else       { out[i] = line.substring(start, t); start = t + 1; }
+  }
+}
+
+bool buttonSet(const char *id, const char *label, const char *action,
+               const char *icon, const char *style) {
   if (!id || !*id) return false;
   if (strchr(id, '\t') || strchr(id, '\n')) return false;
   buttonClear(id);
   if (!action || !*action) { buttonsSave(); return true; }   // cleared
   String keep = buttonStore;
-  buttonStore += String(id) + "\t" + (label ? label : "") + "\t" + action + "\n";
+  buttonStore += String(id) + "\t" + (label ? label : "") + "\t" + action
+               + "\t" + (icon ? icon : "") + "\t" + (style ? style : "") + "\n";
   if (buttonStore.length() > BUTTON_STORE_MAX) {
     buttonStore = keep;
     tlog("button store full — '%s' NOT saved", id);
@@ -496,9 +510,9 @@ bool buttonSet(const char *id, const char *label, const char *action) {
 String buttonAction(const char *id) {
   int e, i = buttonFind(id, &e);
   if (i < 0) return String();
-  String bid, label, action;
-  splitLine(buttonStore.substring(i, e), bid, label, action);
-  return action;
+  String f[5];
+  splitFields(buttonStore.substring(i, e), f, 5);
+  return f[2];
 }
 
 String buttonsJson() {
@@ -507,14 +521,16 @@ String buttonsJson() {
   int i = 0;
   while (i < (int)buttonStore.length()) {
     int e = buttonStore.indexOf('\n', i); if (e < 0) e = buttonStore.length();
-    String id, label, action;
-    splitLine(buttonStore.substring(i, e), id, label, action);
-    if (id.length()) {
+    String f[5];
+    splitFields(buttonStore.substring(i, e), f, 5);
+    if (f[0].length()) {
       if (!first) out += ',';
       first = false;
-      out += "{\"id\":\""; jsonEscapeInto(out, id);
-      out += "\",\"label\":\""; jsonEscapeInto(out, label);
-      out += "\",\"action\":\""; jsonEscapeInto(out, action);
+      out += "{\"id\":\"";      jsonEscapeInto(out, f[0]);
+      out += "\",\"label\":\""; jsonEscapeInto(out, f[1]);
+      out += "\",\"action\":\"";jsonEscapeInto(out, f[2]);
+      out += "\",\"icon\":\"";  jsonEscapeInto(out, f[3]);
+      out += "\",\"style\":\""; jsonEscapeInto(out, f[4]);
       out += "\"}";
     }
     i = e + 1;

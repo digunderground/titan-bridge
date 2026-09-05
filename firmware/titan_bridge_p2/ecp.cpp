@@ -255,7 +255,8 @@ static void uiRoutes() {
   ui.on("/api/button", HTTP_ANY, []() {
     String id = argOr(ui, "id");
     if (!id.length()) { okText(ui, "id required"); return; }
-    buttonSet(id.c_str(), argOr(ui, "label").c_str(), argOr(ui, "action").c_str());
+    buttonSet(id.c_str(), argOr(ui, "label").c_str(), argOr(ui, "action").c_str(),
+              argOr(ui, "icon").c_str(), argOr(ui, "style").c_str());
     okJson(ui, buttonsJson());
   });
   ui.on("/api/press", HTTP_ANY, []() {

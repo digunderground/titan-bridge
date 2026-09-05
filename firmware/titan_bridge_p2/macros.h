@@ -64,7 +64,8 @@ bool     recSaveAs(const char *name, const char *group);
 // --------------------------- button assignments ----------------------------
 // The virtual remote's buttons are data. Each id maps to a label and an action,
 // where an action is any macro script fragment: "k:up", "m:movie night", "s:hdmi1".
-bool   buttonSet(const char *id, const char *label, const char *action);
+bool   buttonSet(const char *id, const char *label, const char *action,
+                 const char *icon, const char *style);
 bool   buttonClear(const char *id);
 String buttonsJson();
 String buttonAction(const char *id);
