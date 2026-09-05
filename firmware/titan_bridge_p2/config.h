@@ -131,9 +131,18 @@
 // --------------------------------------------------------------------------
 // Power state machine (plan §7 — "make both idempotent")
 //
-// Liveness is inferred from the temperature query: a reply means awake,
-// silence means asleep. Nothing else on this projector reports state.
+// The plan assumed liveness could be inferred from the temperature query — a
+// reply means awake, silence means asleep. **Measured 2026-09-05: false on the
+// TITAN Noir Max.** With the projector switched off, temperature replies keep
+// arriving at exactly the same rate, reporting "normal". The serial daemon
+// runs in standby, so the probe says nothing about power.
+//
+// Set to 1 only if a projector is shown to stop answering in standby. Left at
+// 0, the probe is still used for link liveness — it just no longer pretends to
+// report power, which produced a confident and wrong "awake".
 // --------------------------------------------------------------------------
+#define TEMP_PROBE_INDICATES_POWER 0
+
 #define POLL_INTERVAL_MS      10000UL   // how often to ask for temperature
 #define POLL_REPLY_TIMEOUT_MS  1500UL   // how long a reply may take
 #define POLL_MISSES_TO_SLEEP       3    // consecutive misses before "asleep"

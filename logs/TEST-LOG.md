@@ -134,6 +134,29 @@ projector with three HDMI inputs, and the plan called that "a document copied
 from the two-input original TITAN". It was. Parameter `0x03` on instruction
 `0x01` selects the third input.
 
+### The temperature probe is NOT a power indicator — measured
+
+The plan's liveness model — "a reply means awake, silence means asleep" — is
+**false on this projector**. With it switched off, temperature replies kept
+arriving at exactly the same rate:
+
+```
+t=10s  power=awake  temp=normal  rx=2483
+t=80s  power=awake  temp=normal  rx=2819     <- 48 bytes/10s, unchanged
+```
+
+The serial daemon runs in standby. A reply proves the *link* works and says
+nothing about power.
+
+This retracts the "verified power state" claimed when serial first came up.
+`powerobserved` is now true only for a genuine USB bus transition — which this
+projector does not produce either. **So power state on this model is always
+assumed**, whichever channel is in use, and the UI says so rather than
+displaying a confident guess.
+
+`TEMP_PROBE_INDICATES_POWER` in `config.h` re-enables the old inference for a
+projector that is actually shown to go quiet in standby.
+
 ### `wake` is a real discrete power-on
 
 Unlike the HID power key (`0x66`), which is a toggle, the documented serial

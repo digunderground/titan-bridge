@@ -20,7 +20,7 @@
 | Serial command set (inputs, picture modes, brightness) | ✅ with an **FTDI** adapter |
 | **HDMI3 — the undocumented third input** | ✅ confirmed real; XGIMI's table omits it |
 | Discrete power **on** | ✅ serial `wake`, no toggle ambiguity |
-| Verified power **state** | ❌ nothing reports it; on/off track an assumption |
+| Verified power **state** | ❌ nothing reports it — the temperature probe answers in standby too, so on/off track an assumption |
 
 
 An ESP32-S3 that gives an XGIMI TITAN Noir Max the discrete control it does not

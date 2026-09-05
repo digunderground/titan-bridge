@@ -729,7 +729,12 @@ static void runPoll() {
 
   if (probePending && (millis() - probeSentAt) > POLL_REPLY_TIMEOUT_MS) {
     probePending = false;
-    if (probeAnswered()) { pollMisses = 0; setPower(PWR_AWAKE); }
+    if (probeAnswered()) {
+      pollMisses = 0;
+#if TEMP_PROBE_INDICATES_POWER
+      setPower(PWR_AWAKE);
+#endif
+    }
     else if (pollMisses < 255) {
       pollMisses++;
       // Silence only means "asleep" if this link has ever spoken. On a
@@ -737,8 +742,10 @@ static void runPoll() {
       // Test 2) the old code reported "asleep" for a projector that was wide
       // awake — and Home Assistant and the Roku emulation would both have
       // believed it. Never having heard anything is PWR_UNKNOWN, not asleep.
+#if TEMP_PROBE_INDICATES_POWER
       if (pollMisses >= POLL_MISSES_TO_SLEEP && everFrame && !titanUsbPowerKnown())
         setPower(PWR_ASLEEP);
+#endif
     }
   }
 

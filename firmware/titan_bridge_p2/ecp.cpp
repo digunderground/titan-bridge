@@ -144,10 +144,13 @@ String statusJson() {
   j += "\"linkalive\":"; j += titanLinkEverRx() ? "true" : "false"; j += ",";
   j += "\"keychan\":\""; j += titanKeyChannelStr(); j += "\",";
   j += "\"powermode\":\""; j += titanPowerModeStr(); j += "\",";
-  // "Observed" means measured rather than assumed, by either route: a reply
-  // from the projector, or a USB bus transition when there is no serial link.
+  // "Observed" means genuinely measured. A live serial link does NOT qualify:
+  // this projector answers the temperature probe in standby, so a reply proves
+  // the link works and says nothing about power. Only a USB bus transition is
+  // real evidence, and this projector does not produce one either — so on this
+  // model power is always assumed, and the UI says so.
   j += "\"powerobserved\":";
-  j += (titanLinkEverRx() || titanUsbPowerKnown()) ? "true" : "false"; j += ",";
+  j += titanUsbPowerKnown() ? "true" : "false"; j += ",";
   j += "\"ssid\":\"";   jesc(j, netSsid());   j += "\",";
   j += "\"ip\":\"";     j += netIp();         j += "\",";
   j += "\"ap\":";       j += netApMode() ? "true" : "false"; j += ",";
