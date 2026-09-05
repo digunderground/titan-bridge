@@ -72,6 +72,11 @@ bool        titanAssumedKnown();
 bool        titanAssumedOn();
 void        titanAssumeState(bool on);
 
+// Whether a power command is obeyed or filtered against our own assumption.
+bool        titanPowerObey();
+const char *titanPowerModeStr();
+void        titanSetPowerObey(bool obey);
+
 // -------------------------------- status -----------------------------------
 enum PowerState { PWR_UNKNOWN = 0, PWR_AWAKE, PWR_ASLEEP };
 

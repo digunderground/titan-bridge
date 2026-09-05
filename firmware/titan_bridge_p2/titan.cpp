@@ -499,6 +499,48 @@ static void assumeBegin() {
   p.end();
 }
 
+// Who decides whether a power command is needed.
+//
+//   ASSUME (default) — suppress when our own assumption already matches.
+//     The power key is a *toggle*, so obeying blindly means PowerOn on an
+//     already-on projector turns it off: the buttons appear reversed. An
+//     assumption that is right gives genuinely discrete behaviour, and the
+//     bridge sees every toggle it sends, so it only drifts when a human uses
+//     the physical remote. One tap in Settings resyncs it.
+//   OBEY — always send. Every press does something, which is honest but not
+//     discrete. Reasonable only if you accept the buttons as a toggle pair.
+//
+// With no feedback from the projector neither is perfect. ASSUME fails by
+// doing nothing; OBEY fails by doing the opposite of what the label says —
+// and the second is worse, because it looks like a wiring bug.
+static bool     powerObey = false;
+static uint32_t lastPowerAt = 0;
+
+bool        titanPowerObey()  { return powerObey; }
+const char *titanPowerModeStr() { return powerObey ? "obey" : "assume"; }
+
+void titanSetPowerObey(bool obey) {
+  powerObey = obey;
+  Preferences p; p.begin("titan", false);
+  p.putBool("pwrobey", obey); p.end();
+  tlog("power mode -> %s", titanPowerModeStr());
+}
+
+static void powerModeBegin() {
+  Preferences p; p.begin("titan", true);
+  powerObey = p.getBool("pwrobey", false);
+  p.end();
+}
+
+// True when a power key went out too recently to be a separate intent.
+static bool powerDebounced() {
+  if (lastPowerAt && (millis() - lastPowerAt) < POWER_DEBOUNCE_MS) {
+    tlog("power: ignoring repeat within %lu ms", (unsigned long)POWER_DEBOUNCE_MS);
+    return true;
+  }
+  return false;
+}
+
 static bool hidPowerPath() {
 #if HAS_HID
   return titanKeyChannelHid() || !everFrame;
@@ -509,10 +551,14 @@ static bool hidPowerPath() {
 
 void titanPowerOn() {
   if (hidPowerPath()) {
-    if (titanUsbPowerKnown() ? titanUsbAwake() : (assumedKnown && assumedOn)) {
-      tlog("power on: already on%s", titanUsbPowerKnown() ? "" : " (assumed)");
+    // A measured state is worth obeying; an assumed one is not.
+    if (titanUsbPowerKnown() && titanUsbAwake()) { tlog("power on: already on"); return; }
+    if (!powerObey && assumedKnown && assumedOn) {
+      tlog("power on: skipped, believed already on — resync in Settings if wrong");
       return;
     }
+    if (powerDebounced()) return;
+    lastPowerAt = millis();
     tlog("power on: HID power key");
     titanHid("power");
     assumeAfterToggle(true);
@@ -533,10 +579,13 @@ void titanPowerOn() {
 
 void titanPowerOff() {
   if (hidPowerPath()) {
-    if (titanUsbPowerKnown() ? !titanUsbAwake() : (assumedKnown && !assumedOn)) {
-      tlog("power off: already off%s", titanUsbPowerKnown() ? "" : " (assumed)");
+    if (titanUsbPowerKnown() && !titanUsbAwake()) { tlog("power off: already off"); return; }
+    if (!powerObey && assumedKnown && !assumedOn) {
+      tlog("power off: skipped, believed already off — resync in Settings if wrong");
       return;
     }
+    if (powerDebounced()) return;
+    lastPowerAt = millis();
     tlog("power off: HID power key");
     titanHid("power");
     assumeAfterToggle(false);
@@ -550,6 +599,8 @@ void titanPowerOff() {
 
 void titanPowerToggle() {
   if (hidPowerPath()) {
+    if (powerDebounced()) return;
+    lastPowerAt = millis();
     tlog("power toggle: HID power key");
     titanHid("power");
     assumeAfterToggle(!assumedOn);
@@ -649,6 +700,7 @@ static void runPoll() {
 void titanBegin() {
   keyChannelBegin();
   assumeBegin();
+  powerModeBegin();
 #if (SERIAL_CHANNELS & CH_UART1)
   // Bias RX to the idle-high state. Left floating with no adapter attached it
   // picks up noise and delivers phantom bytes.

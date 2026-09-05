@@ -293,6 +293,12 @@ nav.tabs button.sel{color:var(--tx);border-bottom-color:var(--ac)}
   <div class=card>
     <h2>Power state</h2>
     <div class=row>
+      <span class=sub>When a power key is pressed:</span>
+      <button id=pmObey onclick="go('/api/power?state=mode&m=obey')">Always act</button>
+      <button id=pmAssume onclick="go('/api/power?state=mode&m=assume')">Skip if already there</button>
+    </div>
+    <p class=sub id=pmnote style="margin:8px 0 0"></p>
+    <div class=row style="margin-top:10px">
       <span class=sub>If the state below is wrong — someone used the real remote —
         correct it without sending anything:</span>
       <button onclick="go('/api/power?state=sync&is=on')">It's on</button>
@@ -637,6 +643,11 @@ async function refresh(){
 
   if(curTab!=='settings')return;   // the rest only exists on the Settings tab
   $('kc').textContent='active: '+s.keychan+(s.linkalive?'':' — serial link has never answered');
+  $('pmObey').className=s.powermode==='obey'?'on':'';
+  $('pmAssume').className=s.powermode==='assume'?'on':'';
+  $('pmnote').textContent=s.powermode==='obey'
+    ? 'Always act: every press sends the power key. A repeat within 4s is ignored so one press is one toggle. Best when a hub tracks state.'
+    : 'Skip if already there: presses are filtered against the assumed state below. Idempotent when that assumption is right, silently inert when it has drifted.';
   $('obsnote').textContent=s.powerobserved
     ? 'The bridge can observe this projector, so on/off are verified.'
     : 'Nothing about this projector is observable: the serial link never binds and '

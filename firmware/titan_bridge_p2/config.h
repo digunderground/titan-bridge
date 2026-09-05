@@ -141,7 +141,11 @@
 #define WAKE_ATTEMPTS              3    // 'wakeup' frames before giving up
 #define WAKE_SETTLE_MS         4000UL   // wait after wake before re-testing
 #define POWEROFF_CONFIRM_MS     900UL   // power key -> confirmation dialog -> OK
-#define POWEROFF_SETTLE_MS     6000UL   // wait after off before re-testing
+#define POWEROFF_SETTLE_MS     6000UL
+
+// The HID power key is a toggle, so two presses in quick succession would undo
+// each other. One intent, one toggle.
+#define POWER_DEBOUNCE_MS      4000UL   // wait after off before re-testing
 
 // Set to 1 once Day 1 Test 5 proves the USB ports die in standby. The bridge
 // then stops pretending it can wake the projector and says so in /api/status,

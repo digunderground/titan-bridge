@@ -143,6 +143,7 @@ String statusJson() {
   // this API — which is exactly the confusion that cost an evening.
   j += "\"linkalive\":"; j += titanLinkEverRx() ? "true" : "false"; j += ",";
   j += "\"keychan\":\""; j += titanKeyChannelStr(); j += "\",";
+  j += "\"powermode\":\""; j += titanPowerModeStr(); j += "\",";
   // "Observed" means measured rather than assumed, by either route: a reply
   // from the projector, or a USB bus transition when there is no serial link.
   j += "\"powerobserved\":";
@@ -219,6 +220,12 @@ static void uiRoutes() {
   });
   ui.on("/api/power", HTTP_ANY, []() {
     String st = argOr(ui, "state", "toggle");
+    if (st == "mode") {                    // obey | assume
+      String m = argOr(ui, "m", "obey");
+      titanSetPowerObey(m != "assume");
+      okJson(ui, statusJson());
+      return;
+    }
     if (st == "sync") {                    // correct the assumed state, send nothing
       String is = argOr(ui, "is", "on");
       titanAssumeState(is == "on");
