@@ -118,13 +118,61 @@ const size_t NCMDS = sizeof(CMDS) / sizeof(CMDS[0]);
 //   2A2A 02 06 00 08  wipes apps      2A2A 02 06 01 09  keeps apps
 // Reachable only through an explicit raw frame.
 
+// Measured against a TITAN Noir Max on 2026-09-05, not assumed. Every entry
+// below was fired individually and watched; see docs/10-hid-key-probe.md.
 const HidKey HIDKEYS[] = {
   { "up",     0x52 }, { "down",   0x51 }, { "left",   0x50 },
   { "right",  0x4F }, { "ok",     0x28 }, { "back",   0x29 },
-  { "home",   0x4A }, { "volup",  0x4B }, { "voldn",  0x4E },
-  { "focus+", 0x57 }, { "focus-", 0x56 }, { "menu",   0x65 },
+
+  // 0x4A is Keyboard Home, and on this projector it opens the OSD. Both names
+  // point at it: "menu" is what it does, "home" is what ECP calls the key.
+  { "menu",   0x4A }, { "home",   0x4A },
+
+  // 0x66 is Keyboard Power, and it is a *toggle* that works in both
+  // directions — it switches the projector off, and it wakes it from standby.
+  // This is the discrete power control the whole project was chasing, and it
+  // needs no serial channel, no smart plug and no HDMI-CEC.
+  { "power",  0x66 },
+
+  { "volup",  0x80 }, { "voldn",  0x81 },   // keyboard-page volume usages
+  { "pgup",   0x4B }, { "pgdn",   0x4E },   // also honoured; see the doc
+  { "focus+", 0x57 }, { "focus-", 0x56 },
+  { "mute",   0x7F },                       // sent, effect not yet confirmed
 };
+
+// 0x65 (Keyboard Application / the context-menu key) was the previous "menu"
+// binding. It does nothing on this projector — which mattered, because the
+// macro anchor routed k:setting to it and every anchored macro would have
+// failed silently. Left here as a warning, not a binding.
 const size_t NHIDKEYS = sizeof(HIDKEYS) / sizeof(HIDKEYS[0]);
+
+// =========================== USB bus liveness ==============================
+// With no serial channel there is no temperature probe, so the power state
+// machine has nothing to poll. But the projector's USB host stops driving the
+// bus when it sleeps, and TinyUSB reports that — which is a better liveness
+// signal than the temperature ever was: it is pushed, not polled, and it
+// cannot be confused with a link that was never there.
+
+#if HAS_NATIVE_USB
+static volatile bool usbSuspended = false;
+static volatile bool usbStateKnown = false;
+
+static void usbEventCb(void *, esp_event_base_t base, int32_t id, void *) {
+  if (base != ARDUINO_USB_EVENTS) return;
+  switch (id) {
+    case ARDUINO_USB_SUSPEND_EVENT: usbSuspended = true;  usbStateKnown = true; break;
+    case ARDUINO_USB_RESUME_EVENT:  usbSuspended = false; usbStateKnown = true; break;
+    case ARDUINO_USB_STARTED_EVENT: usbSuspended = false; usbStateKnown = true; break;
+    case ARDUINO_USB_STOPPED_EVENT: usbSuspended = true;  usbStateKnown = true; break;
+    default: break;
+  }
+}
+bool titanUsbPowerKnown() { return usbStateKnown; }
+bool titanUsbAwake()      { return usbStateKnown && !usbSuspended; }
+#else
+bool titanUsbPowerKnown() { return false; }
+bool titanUsbAwake()      { return false; }
+#endif
 
 // ============================== link state =================================
 
@@ -271,6 +319,20 @@ bool titanKey(const char *name) {
   return titanHid(n);
 }
 
+bool titanHidRaw(uint8_t usage) {
+#if HAS_HID
+  KB.pressRaw(usage);
+  delay(30);
+  KB.releaseRaw(usage);
+  tlog("HID raw 0x%02X", usage);
+  return true;
+#else
+  (void)usage;
+  tlog("HID unavailable: this board has no native USB device port");
+  return false;
+#endif
+}
+
 bool titanHid(const char *name) {
 #if HAS_HID
   for (size_t i = 0; i < NHIDKEYS; i++) {
@@ -377,7 +439,25 @@ static bool probeAnswered() {
   return everRx && (int32_t)(lastRxAt - probeSentAt) >= 0;
 }
 
+// The HID power key is a toggle, so "on" and "off" are only idempotent if we
+// can see the current state. USB bus suspend gives us exactly that, which is
+// what makes this safe to expose as PowerOn/PowerOff to Home Assistant and the
+// Roku emulation rather than a single ambiguous Toggle.
+static bool hidPowerPath() {
+#if HAS_HID
+  return titanKeyChannelHid() || !everFrame;
+#else
+  return false;
+#endif
+}
+
 void titanPowerOn() {
+  if (hidPowerPath()) {
+    if (titanUsbPowerKnown() && titanUsbAwake()) { tlog("power on: already awake"); return; }
+    tlog("power on: HID power key");
+    titanHid("power");
+    return;
+  }
 #if USB_DEAD_IN_STANDBY
   if (pwr == PWR_ASLEEP) {
     tlog("power on refused: USB_DEAD_IN_STANDBY is set — use the smart plug "
@@ -392,6 +472,12 @@ void titanPowerOn() {
 }
 
 void titanPowerOff() {
+  if (hidPowerPath()) {
+    if (titanUsbPowerKnown() && !titanUsbAwake()) { tlog("power off: already asleep"); return; }
+    tlog("power off: HID power key");
+    titanHid("power");
+    return;
+  }
   if (act != ACT_NONE) { tlog("busy: %s", titanBusyStr()); return; }
   if (pwr == PWR_ASLEEP) { tlog("power off: already asleep"); return; }
   act = ACT_OFF; actStep = 0; actTries = 0; actAt = millis();
@@ -399,6 +485,11 @@ void titanPowerOff() {
 }
 
 void titanPowerToggle() {
+  if (hidPowerPath()) {
+    tlog("power toggle: HID power key");
+    titanHid("power");
+    return;
+  }
   if (pwr == PWR_AWAKE) titanPowerOff();
   else                  titanPowerOn();
 }
@@ -477,7 +568,8 @@ static void runPoll() {
       // Test 2) the old code reported "asleep" for a projector that was wide
       // awake — and Home Assistant and the Roku emulation would both have
       // believed it. Never having heard anything is PWR_UNKNOWN, not asleep.
-      if (pollMisses >= POLL_MISSES_TO_SLEEP && everFrame) setPower(PWR_ASLEEP);
+      if (pollMisses >= POLL_MISSES_TO_SLEEP && everFrame && !titanUsbPowerKnown())
+        setPower(PWR_ASLEEP);
     }
   }
 
@@ -508,6 +600,7 @@ void titanBegin() {
   Serial.begin(LINK_BAUD, SERIAL_8N1);
 #endif
 #if HAS_NATIVE_USB
+  USB.onEvent(usbEventCb);
   KB.begin();
   USB.productName(DEVICE_NAME);
   USB.manufacturerName("DIY");
@@ -530,6 +623,14 @@ void titanLoop() {
 #endif
 #if (SERIAL_CHANNELS & CH_UART0)
   while (Serial.available()) rxByte((uint8_t)Serial.read());
+#endif
+#if HAS_NATIVE_USB
+  // Pushed, not polled: the projector's host controller suspending the bus is
+  // a direct observation of it going to sleep.
+  if (titanUsbPowerKnown()) {
+    PowerState want = titanUsbAwake() ? PWR_AWAKE : PWR_ASLEEP;
+    if (want != pwr) setPower(want);
+  }
 #endif
   // a partial frame that stops arriving is abandoned, not left to poison
   // the next one

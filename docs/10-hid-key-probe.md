@@ -20,20 +20,34 @@ volume and focus to something else entirely, or to nothing.
 
 Press each physical key with the OSD open and note what happens.
 
-| Firmware name | Usage | Press this key | Effect observed |
+**RESULTS — measured on a TITAN Noir Max, 2026-09-05.** Every usage below was
+fired individually through `/api/hidraw` and watched on the OSD.
+
+| Usage | Physical key | Result | Firmware name |
 |---|---|---|---|
-| `up` | 0x52 | ↑ | |
-| `down` | 0x51 | ↓ | |
-| `left` | 0x50 | ← | |
-| `right` | 0x4F | → | |
-| `ok` | 0x28 | Enter / Return | |
-| `back` | 0x29 | Esc | |
-| `home` | 0x4A | Home | |
-| `volup` | 0x4B | Page Up | |
-| `voldn` | 0x4E | Page Down | |
-| `focus+` | 0x57 | numpad **+** | |
-| `focus-` | 0x56 | numpad **−** | |
-| `menu` | 0x65 | the ▤ context-menu key | |
+| 0x52 / 0x51 / 0x50 / 0x4F | ↑ ↓ ← → | **works** | `up` `down` `left` `right` |
+| 0x28 | Enter | **works** | `ok` |
+| 0x29 | Esc | **works** | `back` |
+| 0x4A | Home | **works — opens the OSD** | `menu`, `home` |
+| **0x66** | **Keyboard Power** | **works — switches OFF *and* wakes** | **`power`** |
+| 0x80 / 0x81 | Volume Up / Down | **works** | `volup` `voldn` |
+| 0x4B / 0x4E | Page Up / Down | **works** | `pgup` `pgdn` |
+| 0x57 / 0x56 | numpad + / − | **works** | `focus+` `focus-` |
+| 0x7F | Mute | sent, effect unconfirmed | `mute` |
+| 0x4D | End | unconfirmed | — |
+| **0x65** | context-menu ▤ | **nothing** | *removed* |
+
+### The two that mattered
+
+**0x66 is discrete power, in both directions.** It switches the projector off,
+and it wakes it from standby. That is the capability this whole project exists
+to obtain, and it needs no serial channel, no smart plug and no HDMI-CEC.
+
+**0x65 did nothing, and used to be the `menu` binding.** The macro `anchor`
+routed `k:setting` to it, so every anchored macro would have failed silently
+on the HID channel. `0x4A` is the real menu key. This is exactly the trap this
+worksheet existed to catch, and it was caught before a single macro was written
+against it.
 
 `menu` and the two `focus` entries are the ones that justify the HID channel at
 all — everything else has a serial equivalent via instruction `0x07`. If those
@@ -45,10 +59,17 @@ number row.** A projector's key handler often accepts more than its remote
 exposes, and anything you find here is capability the serial table does not
 have. Record hits:
 
-```
-Unexpected keys that did something: ______________________________________
+Found by wandering off-script: **0x66 (Keyboard Power)** and the keyboard-page
+volume usages **0x80 / 0x81**, none of which were in the original table. The
+projector's key handler accepts more than its own remote exposes.
 
-_________________________________________________________________________
+Still worth trying: F1–F12 (0x3A–0x45), Insert/Delete (0x49/0x4C), Tab (0x2B),
+Space (0x2C), and the Consumer Control usage page — which needs a second HID
+report descriptor and would reach media-transport keys the keyboard page
+cannot.
+
+```
+Further keys that did something: _________________________________________
 ```
 
 ---

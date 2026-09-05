@@ -67,8 +67,7 @@ pre{background:#0b0e14;border:1px solid var(--ln);border-radius:7px;padding:10px
 
 <div class=card>
   <h2>Source &amp; picture</h2>
-  <p class=sub style="margin:0 0 8px">Serial only — these have no HID equivalent, so
-  they do nothing on a projector whose serial daemon never binds. Use menu macros.</p>
+  <p class=sub style="margin:0 0 8px" id=serialnote></p>
   <div class=grid id=quick></div>
 </div>
 
@@ -198,6 +197,15 @@ async function refresh(){
   $('log').textContent=await (await fetch('/api/log')).text();
   $('log').scrollTop=$('log').scrollHeight;
   $('kc').textContent='active: '+s.keychan+(s.linkalive?'':' (serial link never answered)');
+  // These are serial-only commands with no HID equivalent. If the serial link
+  // has never answered they cannot work, and showing them as live buttons is
+  // just lying to the operator.
+  $('serialnote').innerHTML = s.linkalive
+    ? 'Serial commands (instruction 0x01/0x03/0x05).'
+    : '<b>Unavailable.</b> These are serial-only and this projector\\'s serial link '
+      + 'has never answered. Reach these functions with menu macros instead.';
+  $('quick').style.opacity = s.linkalive ? '1' : '0.35';
+  $('quick').style.pointerEvents = s.linkalive ? 'auto' : 'none';
   if(s.irlast)$('irlast').textContent='last IR code seen: '+s.irlast;
 }
 loadMacros();loadIr();refresh();setInterval(refresh,2500);

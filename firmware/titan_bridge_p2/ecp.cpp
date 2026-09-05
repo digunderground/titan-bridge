@@ -186,6 +186,12 @@ static void uiRoutes() {
     String n = argOr(ui, "name");
     okText(ui, titanKey(n.c_str()) ? "ok" : "key failed on this channel");
   });
+  ui.on("/api/hidraw", HTTP_ANY, []() {   // arbitrary usage code, for probing
+    String u = argOr(ui, "usage");
+    long v = strtol(u.c_str(), NULL, 16);
+    if (v <= 0 || v > 0xFF) { okText(ui, "usage must be 01..FF hex"); return; }
+    okText(ui, titanHidRaw((uint8_t)v) ? "ok" : "no HID on this board");
+  });
   ui.on("/api/hid", HTTP_ANY, []() {
     String k = argOr(ui, "key");
     okText(ui, titanHid(k.c_str()) ? "ok" : "unknown key");

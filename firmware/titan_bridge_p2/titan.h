@@ -43,6 +43,12 @@ const Cmd *titanFindCmd(const char *name);
 // runtime setting, persisted across reboots. Explicit s: and h: macro steps
 // still bypass this and go where they say.
 bool        titanKey(const char *name);     // send a key on the current channel
+
+// Fire an arbitrary HID usage code, bypassing the named table. The names in
+// HIDKEYS are guesses about what a given projector does with a usage; this is
+// how you find out what it actually honours, including usages nobody thought
+// to name. See docs/10-hid-key-probe.md.
+bool        titanHidRaw(uint8_t usage);
 bool        titanKeyChannelHid();
 void        titanSetKeyChannel(bool useHid);
 const char *titanKeyChannelStr();           // "serial" | "hid"
@@ -52,6 +58,12 @@ const char *titanKeyChannelStr();           // "serial" | "hid"
 // identical from the transmit side, and cost an evening to tell apart. Counting
 // raw bytes is not enough: a floating UART pin produces them on its own.
 bool        titanLinkEverRx();
+
+// USB bus state, which on a projector that suspends its host controller in
+// standby is a truer liveness signal than any polled probe: pushed rather than
+// polled, and never ambiguous about a link that was never there.
+bool        titanUsbPowerKnown();
+bool        titanUsbAwake();
 
 // -------------------------------- status -----------------------------------
 enum PowerState { PWR_UNKNOWN = 0, PWR_AWAKE, PWR_ASLEEP };
