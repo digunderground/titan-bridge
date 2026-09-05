@@ -115,6 +115,54 @@ model, it does not bind a USB device.
 
 ---
 
+## SofaBaton X2 — **WORKING** — 2026-09-05
+
+The hub drives the projector. Power, navigation and macros all arrive over
+Roku ECP and go out over USB HID.
+
+### What made discovery work
+
+Not what the plan assumed. Two independent blockers, both invisible from
+outside the device:
+
+1. **SSDP reception died seconds after every subscribe.** Announcements were
+   sent on the same `WiFiUDP` object that was joined to the multicast group,
+   and on this stack sending reconfigures the socket and drops membership —
+   so every NOTIFY silently deafened us. Split into separate RX and TX sockets.
+2. **`/query/apps` returned an empty list** when no user macros existed.
+   SofaBaton validates that XML before listing a device.
+
+And then the actual mechanism: **the app listens for `ssdp:alive`** rather than
+relying on its own M-SEARCH reaching us. Inbound multicast on this network was
+unreliable — the hub's searches never arrived at all — but outbound
+announcements were heard fine. Dropping the announce interval from 60 s to
+10 s is what made it appear:
+
+```
+[18.681] ECP root <- 10.0.0.124        <- the phone, unprompted
+```
+
+### The power buttons "reversed"
+
+They were not. The ECP mapping was correct throughout; the bridge's *assumed*
+power state was exactly one state out. Because `0x66` is a toggle, each press
+flipped both the belief and the projector, so the inversion was
+self-perpetuating and could never correct itself — which reads convincingly as
+crossed wires.
+
+Cause: earlier testing fired `0x66` through `/api/hidraw`, which bypasses the
+power state machine, so those toggles changed the projector without the bridge
+knowing. One resync fixed it.
+
+**Drift only comes from changes the bridge does not make** — the physical
+remote, or a raw HID call. The tell is both buttons appearing to do the
+opposite of their label. Settings → Power state → "It's on"/"It's off".
+
+A working serial link would end this permanently: the temperature probe makes
+power verified rather than assumed, and drift becomes impossible.
+
+---
+
 ## Test 2 — CDC/serial binding: **FAILED** — 2026-09-04
 
 The projector does not bind a CP2102 as a serial device. Not a wiring problem,
