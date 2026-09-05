@@ -684,9 +684,17 @@ void titanLoop() {
   while (Serial.available()) rxByte((uint8_t)Serial.read());
 #endif
 #if HAS_NATIVE_USB
-  // Pushed, not polled: the projector's host controller suspending the bus is
-  // a direct observation of it going to sleep.
-  if (titanUsbPowerKnown()) {
+  // Pushed, not polled: the host controller suspending the bus is a direct
+  // observation of *that host* going to sleep.
+  //
+  // But it is only evidence about whichever host the native port is plugged
+  // into, which on the bench is the laptop rather than the projector. A reply
+  // to the temperature probe is an answer from the projector itself, so it
+  // wins whenever it is available; USB bus state is the fallback for when
+  // there is no serial link at all. Without this the two sources contradicted
+  // each other every loop and the power state oscillated awake/asleep twice a
+  // second.
+  if (!everFrame && titanUsbPowerKnown()) {
     PowerState want = titanUsbAwake() ? PWR_AWAKE : PWR_ASLEEP;
     if (want != pwr) setPower(want);
   }

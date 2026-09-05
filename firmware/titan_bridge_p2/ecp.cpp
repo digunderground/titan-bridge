@@ -134,7 +134,10 @@ String statusJson() {
   // this API — which is exactly the confusion that cost an evening.
   j += "\"linkalive\":"; j += titanLinkEverRx() ? "true" : "false"; j += ",";
   j += "\"keychan\":\""; j += titanKeyChannelStr(); j += "\",";
-  j += "\"powerobserved\":"; j += titanUsbPowerKnown() ? "true" : "false"; j += ",";
+  // "Observed" means measured rather than assumed, by either route: a reply
+  // from the projector, or a USB bus transition when there is no serial link.
+  j += "\"powerobserved\":";
+  j += (titanLinkEverRx() || titanUsbPowerKnown()) ? "true" : "false"; j += ",";
   j += "\"ssid\":\"";   jesc(j, netSsid());   j += "\",";
   j += "\"ip\":\"";     j += netIp();         j += "\",";
   j += "\"ap\":";       j += netApMode() ? "true" : "false"; j += ",";
