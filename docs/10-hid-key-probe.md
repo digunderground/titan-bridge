@@ -1,24 +1,21 @@
 # Keyboard probe and hand-mapping
 
-A USB keyboard drives this projector's OSD. That makes two jobs possible
-tonight, with no bridge hardware and no firmware:
+A USB keyboard drives this projector's OSD, and so does the bridge. Two jobs:
 
-1. **Verify the `HIDKEYS` table**, which is currently guesswork.
-2. **Count the menu paths** for the features serial cannot reach — at typing
-   speed, instead of one 250 ms macro step at a time.
+1. **Verify the `HIDKEYS` table** — done, 2026-09-05; results below.
+2. **Count the menu paths** for the features serial cannot reach — still open,
+   and now the main remaining work.
 
-Print this. Fill in the boxes. Both tables go straight into code.
+Section 1 is a record. Section 2 is still a worksheet: print it and fill it in.
 
 ---
 
 ## 1 — Which usages does it honour?
 
-`HIDKEYS[]` in `firmware/titan_bridge_p2/titan.cpp` asserts twelve HID usage
-codes. The arrows and Enter are safe bets. **The rest are assumptions nobody
-has tested**, and four of them are the interesting ones: the projector may map
-volume and focus to something else entirely, or to nothing.
-
-Press each physical key with the OSD open and note what happens.
+`HIDKEYS[]` in `firmware/titan_bridge_p2/titan.cpp` originally asserted twelve
+usage codes, most of them guesses. `/api/hidraw?usage=<hex>` fires any usage
+code at all, which is how the table below was established — and how two things
+nobody had thought to name were found.
 
 **RESULTS — measured on a TITAN Noir Max, 2026-09-05.** Every usage below was
 fired individually through `/api/hidraw` and watched on the OSD.
@@ -49,15 +46,7 @@ on the HID channel. `0x4A` is the real menu key. This is exactly the trap this
 worksheet existed to catch, and it was caught before a single macro was written
 against it.
 
-`menu` and the two `focus` entries are the ones that justify the HID channel at
-all — everything else has a serial equivalent via instruction `0x07`. If those
-three do nothing, the native-USB port earns its place only for whatever you
-find below.
-
-Worth a minute of wandering off-script too: **F1–F12, the media keys, and the
-number row.** A projector's key handler often accepts more than its remote
-exposes, and anything you find here is capability the serial table does not
-have. Record hits:
+### Off-script findings
 
 Found by wandering off-script: **0x66 (Keyboard Power)** and the keyboard-page
 volume usages **0x80 / 0x81**, none of which were in the original table. The
