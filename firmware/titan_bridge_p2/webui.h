@@ -114,6 +114,24 @@ nav.tabs button.sel{color:var(--tx);border-bottom-color:var(--ac)}
 .iconpick{display:flex;flex-wrap:wrap;gap:6px}
 .iconpick button{width:38px;height:38px;padding:0;font-size:18px;border-radius:9px}
 .iconpick button.sel{border-color:var(--ac);background:#1d3a5c}
+/* assigned buttons live on the remote body, in rows */
+.ubtns{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;width:100%}
+.ubtns .ubtn{width:100%;justify-content:center}
+.ubwrap{display:grid;gap:4px}
+.ubctl{display:flex;gap:4px;justify-content:center}
+.ubctl button{padding:2px 8px;font-size:11px;border-radius:6px}
+.rsep{height:1px;background:var(--ln);margin:2px 0}
+/* On a phone the remote should be the screen, not a card floating in one. */
+@media(max-width:560px){
+  main{padding:10px}
+  .remote{max-width:none;border-radius:0;border-left:0;border-right:0;
+          margin:-10px -10px 0;padding:16px 14px 22px}
+  .dpad{width:min(76vw,300px);height:min(76vw,300px)}
+  .okb{width:42%;height:42%;font-size:15px}
+  .seg{font-size:24px}
+  .ubtns{grid-template-columns:repeat(4,1fr)}
+  nav.tabs{padding:0 8px}
+}
 .warn{color:var(--wn)}
 </style>
 <header>
@@ -168,19 +186,15 @@ nav.tabs button.sel{color:var(--tx);border-bottom-color:var(--ac)}
       </div>
     </div>
 
-    <div class=rrow>
-      <span class=sub id=pwrnote></span>
-    </div>
-  </div>
+    <div class=rsep></div>
+    <div class=ubtns id=mybtns></div>
 
-  <div class=card>
-    <h2>My buttons <span class=sub id=editnote></span></h2>
-    <div class=grid id=mybtns></div>
-    <div class=row style=margin-top:10px>
+    <div class=rrow>
       <button id=editbtn onclick=toggleEdit()>Edit</button>
-      <button id=addbtn class="hide" onclick="beOpen(null)">+ Add button</button>
-      <span class=sub id=btnhint></span>
+      <button id=addbtn class="hide" onclick="beOpen(null)">+ Add</button>
     </div>
+    <div class=rrow><span class=sub id=btnhint></span></div>
+    <div class=rrow><span class=sub id=pwrnote></span></div>
   </div>
 
   <div class=card id=beCard style=display:none>
@@ -479,7 +493,8 @@ function toggleEdit(){
   $('editbtn').textContent=editMode?'Done':'Edit';
   $('editbtn').className=editMode?'on':'';
   $('addbtn').classList.toggle('hide',!editMode);
-  $('btnhint').textContent=editMode?'Click a button to change it.':'';
+  $('btnhint').textContent=editMode
+    ? 'Use \u270E to edit, \u25C0 \u25B6 to reorder.' : '';
   if(!editMode)beClose();
   loadButtons();
 }
@@ -494,11 +509,30 @@ function btnFace(x){
 async function loadButtons(){
   let b;try{b=await (await fetch('/api/buttons')).json();}catch(e){return;}
   window._btns=b;
-  $('mybtns').innerHTML=b.length?b.map(x=>{
+  if(!b.length){
+    $('mybtns').innerHTML='<span class=sub style=grid-column:1/-1>'
+      +'no buttons yet — press Edit, then + Add</span>';
+    return;
+  }
+  $('mybtns').innerHTML=b.map((x,i)=>{
     const f=btnFace(x);
-    const act=editMode?`beOpen('${esc(x.id)}')`:`go('/api/press?id=${encodeURIComponent(x.id)}')`;
-    return `<button class="${f.cls}" onclick="${act}">${f.inner}</button>`;
-  }).join(''):'<span class=sub>none yet — press Edit, then Add button</span>';
+    if(!editMode)
+      return `<button class="${f.cls}" onclick="go('/api/press?id=${encodeURIComponent(x.id)}')">${f.inner}</button>`;
+    /* In edit mode the controls are explicit rather than the button quietly
+       meaning something different than it looks like it means. */
+    const j=JSON.stringify(x.id);
+    return `<div class=ubwrap>
+      <button class="${f.cls}" onclick='beOpen(${j})'>${f.inner}</button>
+      <div class=ubctl>
+        <button onclick='bmove(${j},"up")' ${i===0?'disabled':''} title="move left">◀</button>
+        <button onclick='beOpen(${j})' title="edit">✎</button>
+        <button onclick='bmove(${j},"down")' ${i===b.length-1?'disabled':''} title="move right">▶</button>
+      </div></div>`;
+  }).join('');
+}
+async function bmove(id,dir){
+  await fetch('/api/buttonmove?id='+encodeURIComponent(id)+'&dir='+dir,{method:'POST'});
+  loadButtons();
 }
 
 async function beOpen(id){

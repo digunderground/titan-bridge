@@ -69,6 +69,7 @@ bool   buttonSet(const char *id, const char *label, const char *action,
 bool   buttonClear(const char *id);
 String buttonsJson();
 String buttonAction(const char *id);
+bool   buttonMove(const char *id, bool up);
 
 // ------------------------------ Roku apps ----------------------------------
 String macroAppsXml();                    // user macros as <app> entries

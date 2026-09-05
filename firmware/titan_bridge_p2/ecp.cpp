@@ -259,6 +259,11 @@ static void uiRoutes() {
               argOr(ui, "icon").c_str(), argOr(ui, "style").c_str());
     okJson(ui, buttonsJson());
   });
+  ui.on("/api/buttonmove", HTTP_ANY, []() {
+    String id = argOr(ui, "id"), dir = argOr(ui, "dir", "up");
+    buttonMove(id.c_str(), dir == "up");
+    okJson(ui, buttonsJson());
+  });
   ui.on("/api/press", HTTP_ANY, []() {
     String id = argOr(ui, "id");
     String a  = buttonAction(id.c_str());

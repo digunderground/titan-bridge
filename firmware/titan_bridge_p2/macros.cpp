@@ -515,6 +515,31 @@ String buttonAction(const char *id) {
   return f[2];
 }
 
+// Order is the order of the lines, so moving a button is swapping two of them.
+bool buttonMove(const char *id, bool up) {
+  // Collect the lines, find ours, swap with its neighbour, write it back.
+  String lines[32]; int n = 0, me = -1;
+  int i = 0;
+  while (i < (int)buttonStore.length() && n < 32) {
+    int e = buttonStore.indexOf('\n', i); if (e < 0) e = buttonStore.length();
+    String line = buttonStore.substring(i, e);
+    if (line.length()) {
+      if (line.startsWith(String(id) + "\t")) me = n;
+      lines[n++] = line;
+    }
+    i = e + 1;
+  }
+  if (me < 0) return false;
+  int other = up ? me - 1 : me + 1;
+  if (other < 0 || other >= n) return false;      // already at the end
+  String tmp = lines[me]; lines[me] = lines[other]; lines[other] = tmp;
+
+  buttonStore = "";
+  for (int k = 0; k < n; k++) { buttonStore += lines[k]; buttonStore += "\n"; }
+  buttonsSave();
+  return true;
+}
+
 String buttonsJson() {
   String out = "[";
   bool first = true;
