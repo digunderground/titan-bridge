@@ -6,8 +6,17 @@ macro engine that drives the on-screen menu for the features XGIMI's serial set
 does not expose.
 
 The Noir has no IR receiver, no PJLink, no smart OS and therefore no ADB. What
-it does have is **RS232 over a USB adapter, at 115200 8N1**, once you turn on
-Settings → General → Serial Port Control. Everything here is built on that.
+XGIMI documents is **RS232 over a USB adapter, at 115200 8N1**, once you turn on
+Settings → General → Serial Port Control.
+
+> **Status, 2026-09-04.** That premise does not hold on this unit yet. A CP2102
+> is never bound — the projector does not open the port at all. A plain USB
+> **keyboard**, however, drives the OSD perfectly, so the HID channel works
+> where the serial one does not. Adapters with other driver chips are on the
+> way; see [`logs/TEST-LOG.md`](logs/TEST-LOG.md) for the evidence and
+> [`docs/11-adapter-driver-test.md`](docs/11-adapter-driver-test.md) for what
+> happens next. The bridge can now route menu navigation over either channel
+> (`keychan serial|hid`), so this is a setting rather than a rewrite.
 
 ---
 
@@ -138,18 +147,28 @@ contradicts itself, in [`docs/06-command-reference.md`](docs/06-command-referenc
 These are the things the hardware has to answer. They are listed here so that
 finding one of them out is progress rather than a surprise.
 
-1. **Does CDC bind?** Probably not — the projector's daemon almost certainly
-   wants `/dev/ttyUSB*`, which needs a real USB-serial chip. Hence the CH340.
-2. **Do the USB ports stay powered in standby?** If not, `wake` can never
-   reach the projector and power-on has to come from a smart plug or HDMI-CEC.
-   Test 5, run early.
-3. **Does HDMI3 exist as parameter `03`?** The document lists two HDMI inputs
+1. ~~**Does CDC bind?**~~ **Answered: no — and neither does a CP2102.** The
+   projector never opens a port for either. It is not that the daemon binds and
+   ignores us; nothing binds at all, evidenced by the absence of any DTR
+   assertion across hundreds of seconds. The open question is now narrower:
+   *which USB-serial driver, if any, does its kernel carry?* `ftdi_sio`,
+   `ch341` and `pl2303` are all untested.
+2. ~~**Do the USB ports stay powered in standby?**~~ **Answered: yes.** The
+   bridge stayed up, on Wi-Fi, powered by nothing but the projector's USB, with
+   the projector switched off. So the bridge survives to wake it — if something
+   it can send turns out to wake it. Whether an HID keypress does is the next
+   cheap experiment.
+3. **Does HDMI3 exist as parameter `03`?** Still open, and unanswerable until
+   some serial channel works. The document lists two HDMI inputs
    on a three-HDMI projector, which smells like a copy from the original TITAN.
 4. **Is high-refresh "extreme" parameter `01` or `02`?** The document prints
    `01` and gives a checksum that only works for `02`. The firmware follows the
    checksum.
 5. **Does SofaBaton's Roku profile surface the TV-only keys?** The bridge
    presents `is-tv=true` specifically to find out.
+6. **Does an HID keypress wake it from standby?** The ports stay live and a
+   keyboard drives the OSD, so this is plausible — and if it holds there is
+   discrete power-on with no smart plug and no serial at all.
 
 ## After a projector firmware update
 
