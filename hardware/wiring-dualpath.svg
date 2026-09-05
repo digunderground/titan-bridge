@@ -1,0 +1,89 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 560" width="900" height="560" font-family="ui-sans-serif,system-ui,Segoe UI,Roboto,sans-serif">
+  <style>
+    .box{fill:#f7f8fa;stroke:#333;stroke-width:2;rx:8}
+    .lbl{font-size:15px;font-weight:600;fill:#111}
+    .sub{font-size:12px;fill:#555}
+    .pin{font-size:12px;fill:#111;font-family:ui-monospace,Menlo,monospace}
+    .wire{stroke-width:3;fill:none}
+    .w-tx{stroke:#c2410c}
+    .w-rx{stroke:#1d4ed8}
+    .w-gnd{stroke:#111}
+    .w-usb{stroke:#6d3ff0;stroke-width:4}
+    .wlbl{font-size:12px;font-weight:600}
+    .warn{fill:#7a2634;font-size:12.5px;font-weight:600}
+    .note{font-size:12px;fill:#444}
+    .port{fill:#e6e8ee;stroke:#666;stroke-width:1.5;rx:3}
+  </style>
+
+  <text x="20" y="28" class="lbl" font-size="18">TITAN Noir — dual path: HID on one USB port, serial on the other</text>
+  <text x="20" y="48" class="sub">Both channels run at once. HID already works; the serial side is the experiment.</text>
+
+  <!-- Projector -->
+  <rect x="20" y="80" width="210" height="180" class="box"/>
+  <text x="34" y="106" class="lbl">XGIMI TITAN Noir</text>
+  <text x="34" y="126" class="sub">Settings → General →</text>
+  <text x="34" y="142" class="sub">Serial Port Control = ON</text>
+  <rect x="150" y="160" width="70" height="26" class="port"/>
+  <text x="158" y="178" class="pin">USB 2.0</text>
+  <rect x="150" y="200" width="70" height="26" class="port"/>
+  <text x="158" y="218" class="pin">USB 3.0</text>
+
+  <!-- ESP32-S3 -->
+  <rect x="380" y="80" width="230" height="180" class="box"/>
+  <text x="394" y="106" class="lbl">ESP32-S3-DevKitC-1</text>
+  <text x="394" y="126" class="sub">BOARD=1 — no reflash needed</text>
+  <text x="394" y="142" class="sub">link = native-CDC + UART1</text>
+  <rect x="380" y="160" width="70" height="26" class="port"/>
+  <text x="388" y="178" class="pin">USB (native)</text>
+  <rect x="380" y="200" width="70" height="26" class="port"/>
+  <text x="392" y="218" class="pin">UART</text>
+  <text x="530" y="178" class="pin">GPIO17  TX</text>
+  <text x="530" y="200" class="pin">GPIO18  RX</text>
+  <text x="530" y="222" class="pin">GND</text>
+
+  <!-- CH340 -->
+  <rect x="380" y="330" width="230" height="150" class="box"/>
+  <text x="394" y="356" class="lbl">CH340G USB→TTL</text>
+  <text x="394" y="376" class="sub">jumper on 3V3, not 5V</text>
+  <rect x="380" y="400" width="70" height="26" class="port"/>
+  <text x="386" y="418" class="pin">USB-A</text>
+  <text x="530" y="404" class="pin">TXD</text>
+  <text x="530" y="426" class="pin">RXD</text>
+  <text x="530" y="448" class="pin">GND</text>
+  <text x="394" y="470" class="warn">VCC — leave unconnected</text>
+
+  <!-- USB: projector 2.0 -> ESP32 native -->
+  <path d="M220 173 H380" class="wire w-usb"/>
+  <text x="248" y="165" class="wlbl" fill="#6d3ff0">USB data cable — HID + power</text>
+
+  <!-- USB: projector 3.0 -> CH340 -->
+  <path d="M220 213 H300 V413 H380" class="wire w-usb"/>
+  <text x="246" y="300" class="wlbl" fill="#6d3ff0">USB-A into the projector</text>
+
+  <!-- TXD -> GPIO18 -->
+  <path d="M620 404 H700 V186 H628" class="wire w-tx"/>
+  <text x="706" y="300" class="wlbl" fill="#c2410c">CH340 TXD → GPIO18</text>
+  <text x="706" y="316" class="note">measure this line first</text>
+
+  <!-- RXD <- GPIO17 -->
+  <path d="M620 426 H740 V166 H628" class="wire w-rx"/>
+  <text x="746" y="330" class="wlbl" fill="#1d4ed8">GPIO17 → CH340 RXD</text>
+
+  <!-- GND -->
+  <path d="M620 448 H780 V226 H628" class="wire w-gnd"/>
+  <text x="700" y="470" class="wlbl">GND ↔ GND — not optional</text>
+
+  <!-- Warning block -->
+  <rect x="20" y="330" width="330" height="150" fill="#fff5f5" stroke="#7a2634" stroke-width="2" rx="8"/>
+  <text x="34" y="356" class="warn">Measure before you connect</text>
+  <text x="34" y="378" class="note">1. Jumper to 3V3. Plug the module into a PC</text>
+  <text x="34" y="394" class="note">   alone. Measure TXD to GND.</text>
+  <text x="34" y="414" class="note">2. ~3.3 V → wire TXD straight to GPIO18.</text>
+  <text x="34" y="434" class="note">3. ~5 V → divider on that line only:</text>
+  <text x="34" y="450" class="note">   1 kΩ TXD→GPIO18, 2 kΩ GPIO18→GND.</text>
+  <text x="34" y="470" class="warn">The ESP32-S3 is not 5 V tolerant.</text>
+
+  <text x="20" y="516" class="note">Idle UART TX sits high, so a healthy 3.3 V module reads ~3.3 V at rest. "Switchable" modules sometimes</text>
+  <text x="20" y="534" class="note">switch only the VCC output pin while the chip still runs at 5 V — which is why you measure rather than trust the silkscreen.</text>
+  <text x="20" y="552" class="note">GPIO17 is an output driving the module's RXD; 3.3 V clears a CH340's input threshold, so that direction needs nothing.</text>
+</svg>

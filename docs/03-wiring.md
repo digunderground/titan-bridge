@@ -26,6 +26,40 @@ change the cable before you change anything else.
 
 ---
 
+## Dual path — both projector ports at once  (2026-09-05)
+
+This is the target architecture in plan §5, and it is what to build now that
+HID works and serial does not: **native USB carries HID on one projector port,
+a CH340 carries serial on the other.** They are independent, so the working
+channel keeps working while the experimental one is tested.
+
+![dual path](../hardware/wiring-dualpath.svg)
+
+No firmware change is needed. `BOARD=1` already sets
+`SERIAL_CHANNELS = CH_NATIVE_CDC | CH_UART1`, so the bridge has been
+transmitting `2A2A` frames out GPIO17 all along — into nothing. The adapter
+just gives them somewhere to go.
+
+| From | To | Note |
+|---|---|---|
+| ESP32-S3 **USB** (native) | projector USB 2.0 | HID + power. Already working. |
+| CH340 **TXD** | ESP32 **GPIO18** | measure this line first |
+| CH340 **RXD** | ESP32 **GPIO17** | |
+| CH340 **GND** | ESP32 **GND** | common reference, not optional |
+| CH340 **VCC** | **leave unconnected** | |
+| CH340 **USB-A** | projector USB 3.0 | |
+
+**What success looks like.** `rx` climbs and the log shows `RX 2A 2A …`. The
+web UI's Source & picture buttons stop being dimmed by themselves, because
+they key off whether a valid frame has ever arrived.
+
+**What "bytes but no frames" means.** If `rx` climbs while no `RX` line
+appears, something is talking but not in the frame format we expect — which
+would put the Serial Port ID addressing back on the table. See
+`logs/TEST-LOG.md`.
+
+---
+
 ## Phase 2 — the USB-TTL dongle
 
 Only needed if Day 1 Test 2 failed, which is the expected outcome. The
