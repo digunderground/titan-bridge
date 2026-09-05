@@ -209,11 +209,31 @@ addressed protocol.
 already the most permissive configuration available. Nothing to change, and the
 bridge implements no addressing to match it against.
 
-### Still untested
+### CH340 (`ch341`) — also fails, 2026-09-05
 
-CH340 (`ch341`) and PL2303 (`pl2303`) adapters, on order. A genuine USB-to-RS232
-DB9 adapter into a MAX3232 is the last rung. If all three fail, the explanation
-above is almost certainly right.
+Dual path, exactly as plan §5 describes: ESP32-S3 native USB on the projector's
+USB 3.0 port carrying HID, a CH340G on USB 2.0 carrying serial, its TTL side on
+the bridge's UART1 (GPIO17/18, jumper on 3V3).
+
+The wiring was proven first with the laptop standing in for the projector —
+frames out, replies in, `temp=normal`, **0 bytes discarded as non-frame**. So
+the adapter, the levels, the crossover and the UART1 channel are all known
+good. Moved to the projector: `tx` climbing, `rx = 0`, indefinitely.
+
+| Chip | Driver | Binds? |
+|---|---|---|
+| CP2102 | `cp210x` | no |
+| CH340G | `ch341` | **no** |
+| PL2303 | `pl2303` | untested |
+| FT232RL | `ftdi_sio` | untested |
+
+Two driver classes down. `ftdi_sio` is the one most commonly bundled in SoC
+vendor kernels, so the FTDI adapters are the strongest remaining candidates —
+and if they fail too, this projector does not bind USB-serial devices at all
+and the serial channel does not exist on this model, whatever the
+documentation implies.
+
+None of this blocks anything: HID carries the whole product.
 
 ---
 

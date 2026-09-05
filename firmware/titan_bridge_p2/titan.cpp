@@ -186,6 +186,7 @@ static uint32_t txFrames = 0, rxBytes = 0;
 static uint32_t lastRxAt = 0;           // millis of last byte in
 static bool     everRx   = false;   // any byte at all, including line noise
 static bool     everFrame= false;   // a checksum-valid frame — the real signal
+static uint32_t lastFrameAt = 0;    // millis of the last valid frame
 static int8_t   lastTemp = -1;
 static char     lastRxHex[52] = "-";
 
@@ -403,6 +404,7 @@ static void frameComplete(const uint8_t *f, uint8_t n) {
     return;
   }
   everFrame = true;
+  lastFrameAt = millis();
 
   // 2A 2A 03 13 01 XX CS — temperature status postback
   if (n >= 7 && f[3] == 0x13 && f[4] == 0x01) {
@@ -455,9 +457,14 @@ static void sendProbe() {
   titanSendNamed("temp");
 }
 
-// Did anything arrive since the probe went out?
+// Did the projector *answer* since the probe went out?
+//
+// "Anything arrived" is not the same question. A single byte of noise on a
+// floating or newly connected line was enough to report a projector awake that
+// had never said a word — so this asks for a checksum-valid frame, the same
+// standard the asleep transition already uses.
 static bool probeAnswered() {
-  return everRx && (int32_t)(lastRxAt - probeSentAt) >= 0;
+  return everFrame && (int32_t)(lastFrameAt - probeSentAt) >= 0;
 }
 
 // The HID power key is a toggle, so "on" and "off" are only idempotent if we
