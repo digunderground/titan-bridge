@@ -63,6 +63,44 @@ nav.tabs button.sel{color:var(--tx);border-bottom-color:var(--ac)}
 .ins{width:16px;height:22px;border:0;background:none;color:#3a4256;cursor:pointer;padding:0;font-size:15px;line-height:1}
 .ins:hover{color:var(--ac)}
 .grp{margin:0 0 4px;font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--dim)}
+/* ------------------------- virtual remote -------------------------- */
+.remote{max-width:340px;margin:0 auto;background:#12151c;border:1px solid var(--ln);
+  border-radius:28px;padding:18px 16px 22px;display:grid;gap:14px;
+  box-shadow:0 18px 40px rgba(0,0,0,.45)}
+.rrow{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
+.circ{width:46px;height:46px;border-radius:50%;padding:0;display:inline-flex;
+  align-items:center;justify-content:center;background:#232838;border:1px solid #2c3346;
+  font-size:15px}
+.circ:hover{border-color:var(--ac);color:var(--ac)}
+.circ.pwr{background:#4a1620;border-color:#7a2634;color:#ff8b96}
+.circ.pwr:hover{background:#5e1b28;border-color:#ff6b6b;color:#ffb3bd}
+.pillb{border-radius:22px;padding:9px 16px;background:#232838;border:1px solid #2c3346}
+/* ring d-pad: four wedges around a hub, the way a real remote reads */
+.dpad{position:relative;width:212px;height:212px;margin:2px auto;border-radius:50%;
+  overflow:hidden;background:#3d2a72}
+.seg{position:absolute;inset:0;width:100%;height:100%;border:0;border-radius:0;
+  background:#6d3ff0;color:#fff;font-size:20px;display:flex;padding:0;cursor:pointer}
+.seg:hover{background:#8257ff;color:#fff}
+.seg:active{background:#5a2fd0}
+.seg.up{clip-path:polygon(50% 50%,0 0,100% 0);align-items:flex-start;justify-content:center;padding-top:16px}
+.seg.dn{clip-path:polygon(50% 50%,100% 100%,0 100%);align-items:flex-end;justify-content:center;padding-bottom:16px}
+.seg.lf{clip-path:polygon(50% 50%,0 100%,0 0);align-items:center;justify-content:flex-start;padding-left:16px}
+.seg.rt{clip-path:polygon(50% 50%,100% 0,100% 100%);align-items:center;justify-content:flex-end;padding-right:16px}
+/* The wedges meet on the diagonals, so the seams are the two diagonals — and
+   a line has to be ~1.5x the box to reach corner to corner once rotated. */
+.xh,.xv{position:absolute;left:50%;top:50%;width:150%;height:2px;
+  background:#12151c;pointer-events:none;transform-origin:center}
+.xh{transform:translate(-50%,-50%) rotate(45deg)}
+.xv{transform:translate(-50%,-50%) rotate(-45deg)}
+.okb{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+  width:96px;height:96px;border-radius:50%;background:#2a1c52;border:3px solid #12151c;
+  color:#fff;font-weight:600;font-size:16px;letter-spacing:.04em}
+.okb:hover{background:#3a2770;color:#fff;border-color:#12151c}
+.rocker{display:flex;flex-direction:column;background:#232838;border:1px solid #2c3346;
+  border-radius:24px;overflow:hidden}
+.rocker button{border:0;border-radius:0;background:none;padding:9px 15px}
+.rocker span{height:1px;background:#2c3346}
+.rlabel{text-align:center;font-size:10px;color:var(--dim);letter-spacing:.1em;text-transform:uppercase}
 .warn{color:var(--wn)}
 </style>
 <header>
@@ -77,33 +115,48 @@ nav.tabs button.sel{color:var(--tx);border-bottom-color:var(--ac)}
 
 <!-- ============================== REMOTE ============================== -->
 <main id=p_remote>
-  <div class=card>
-    <h2>Power</h2>
-    <div class=grid>
-      <button class=pri onclick="go('/api/power?state=on')">On</button>
-      <button onclick="go('/api/power?state=off')">Off</button>
-      <button onclick="go('/api/power?state=toggle')">Toggle</button>
-      <span class=sub id=pwrnote style=margin-left:auto></span>
-    </div>
-  </div>
+  <div class=remote>
 
-  <div class=card>
-    <h2>Navigation</h2>
-    <div class=nav>
-      <span></span><button onclick="go('/api/nav?name=up')">▲</button><span></span>
-      <button onclick="go('/api/nav?name=left')">◀</button>
-      <button onclick="go('/api/nav?name=ok')">OK</button>
-      <button onclick="go('/api/nav?name=right')">▶</button>
-      <span></span><button onclick="go('/api/nav?name=down')">▼</button><span></span>
+    <div class=rrow>
+      <button class="circ pwr" title="Power toggle" onclick="go('/api/power?state=toggle')">⏻</button>
+      <button class=circ title="Power on"  onclick="go('/api/power?state=on')">On</button>
+      <button class=circ title="Power off" onclick="go('/api/power?state=off')">Off</button>
+      <button class=circ title="Mute"      onclick="go('/api/nav?name=mute')">🔇</button>
     </div>
-    <div class=grid style=margin-top:10px;justify-content:center>
-      <button onclick="go('/api/nav?name=back')">Back</button>
-      <button onclick="go('/api/nav?name=menu')">Menu</button>
-      <button onclick="go('/api/nav?name=volup')">Vol +</button>
-      <button onclick="go('/api/nav?name=voldn')">Vol −</button>
-      <button onclick="go('/api/nav?name=mute')">Mute</button>
-      <button onclick="go('/api/hid?key=focus%2B')">Focus +</button>
-      <button onclick="go('/api/hid?key=focus-')">Focus −</button>
+
+    <div class=rrow>
+      <button class=pillb onclick="go('/api/nav?name=menu')">Menu</button>
+      <button class=pillb onclick="go('/api/nav?name=back')">Back</button>
+    </div>
+
+    <div class=dpad>
+      <button class="seg up" onclick="go('/api/nav?name=up')">▲</button>
+      <button class="seg rt" onclick="go('/api/nav?name=right')">▶</button>
+      <button class="seg dn" onclick="go('/api/nav?name=down')">▼</button>
+      <button class="seg lf" onclick="go('/api/nav?name=left')">◀</button>
+      <span class=xh></span><span class=xv></span>
+      <button class=okb onclick="go('/api/nav?name=ok')">OK</button>
+    </div>
+
+    <div class=rrow style=align-items:flex-start;gap:26px>
+      <div>
+        <div class=rocker>
+          <button onclick="go('/api/nav?name=volup')">+</button><span></span>
+          <button onclick="go('/api/nav?name=voldn')">−</button>
+        </div>
+        <div class=rlabel style=margin-top:6px>Vol</div>
+      </div>
+      <div>
+        <div class=rocker>
+          <button onclick="go('/api/hid?key=focus%2B')">+</button><span></span>
+          <button onclick="go('/api/hid?key=focus-')">−</button>
+        </div>
+        <div class=rlabel style=margin-top:6px>Focus</div>
+      </div>
+    </div>
+
+    <div class=rrow>
+      <span class=sub id=pwrnote></span>
     </div>
   </div>
 
