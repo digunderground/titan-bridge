@@ -18,6 +18,9 @@ static WebServer ecp(ECP_PORT);
 // in a brief window after each beginMulticast() and then never again.
 static WiFiUDP   ssdpRx;     // joined to 239.255.255.250:1900, receive only
 static WiFiUDP   ssdpTx;     // sends replies and NOTIFY, never joined
+static WiFiUDP   ssdpUni;    // unicast M-SEARCH straight at our IP
+
+static void ssdpNotify();    // defined with the SSDP section, below
 static uint32_t  notifyAt = 0;
 static char      serialNo[16];
 static char      deviceId[16];
@@ -310,6 +313,13 @@ static void uiRoutes() {
     netSetCreds(s.c_str(), p.c_str());
   });
   ui.on("/api/forget", HTTP_ANY, []() { okText(ui, "clearing"); delay(150); netForget(); });
+  ui.on("/api/announce", HTTP_ANY, []() {
+    // Fire a burst before starting a hub scan, for clients that listen for
+    // ssdp:alive rather than sending their own search.
+    for (int i = 0; i < 6; i++) { ssdpNotify(); delay(120); }
+    tlog("SSDP: announced 6x on request");
+    okText(ui, "announced");
+  });
   ui.on("/api/reboot", HTTP_ANY, []() { okText(ui, "rebooting"); delay(200); ESP.restart(); });
 
   ui.onNotFound([]() { cors(ui); ui.send(404, "text/plain", "not found"); });
@@ -512,11 +522,11 @@ static void ssdpNotify() {
   ssdpTx.endPacket();
 }
 
-static void ssdpLoop() {
-  int len = ssdpRx.parsePacket();
+// Both sockets carry the same kind of request, so handle them the same way.
+static void ssdpHandle(WiFiUDP &sock, int len) {
   if (len > 0) {
     char buf[512];
-    int n = ssdpRx.read(buf, sizeof(buf) - 1);
+    int n = sock.read(buf, sizeof(buf) - 1);
     if (n > 0) {
       buf[n] = 0;
       if (strncasecmp(buf, "M-SEARCH", 8) == 0) {
@@ -539,12 +549,18 @@ static void ssdpLoop() {
         }
         bool match = containsCI(buf, "roku:ecp") || containsCI(buf, "ssdp:all") ||
                      containsCI(buf, "upnp:rootdevice");
-        if (match) ssdpRespond(ssdpRx.remoteIP(), ssdpRx.remotePort());
+        if (match) ssdpRespond(sock.remoteIP(), sock.remotePort());
         tlog("SSDP %s from %s ST=%s", match ? "ANSWERED" : "ignored",
-             ssdpRx.remoteIP().toString().c_str(), st);
+             sock.remoteIP().toString().c_str(), st);
       }
     }
   }
+}
+
+static void ssdpLoop() {
+  ssdpHandle(ssdpRx,  ssdpRx.parsePacket());
+  ssdpHandle(ssdpUni, ssdpUni.parsePacket());
+
   if ((int32_t)(millis() - notifyAt) >= 0) {
     notifyAt = millis() + SSDP_NOTIFY_INTERVAL_MS;
     // Re-join the group before announcing. Multicast membership on this stack
@@ -577,6 +593,9 @@ void ecpBegin() {
   if (!netApMode()) {
     ssdpRx.beginMulticast(IPAddress(239, 255, 255, 250), 1900);
     ssdpTx.begin(0);                 // ephemeral port, send only
+    // Some clients probe a known IP with a unicast M-SEARCH rather than
+    // multicasting. beginMulticast() alone does not deliver those.
+    ssdpUni.begin(1900);
     notifyAt = millis() + 3000;
   }
   tlog("Roku ECP on http://%s:%d/ (serial %s)", netIp().c_str(), ECP_PORT, serialNo);

@@ -199,7 +199,11 @@
 #define ECP_PORT                8060
 #define UI_PORT                   80
 #define ECP_ENABLE                 1
-#define SSDP_NOTIFY_INTERVAL_MS 60000UL
+// Announce often. Measured on one network: the bridge's outbound multicast is
+// heard reliably while inbound M-SEARCH from some hosts never arrives at all —
+// so discovery cannot depend on hearing the search. A client that listens for
+// ssdp:alive finds us regardless, and 10 s of a ~200 byte datagram is nothing.
+#define SSDP_NOTIFY_INTERVAL_MS 10000UL
 
 // --------------------------------------------------------------------------
 // IR receive. Set to 0 if Day 1 Test 6 found no receiver and you never wired
