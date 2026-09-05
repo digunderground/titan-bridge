@@ -24,9 +24,36 @@ InputHDMI1–4 — which maps onto this projector almost too neatly.
 1. Bridge and hub on the **same subnet**, both on **2.4 GHz**. SSDP is
    multicast and will not cross a VLAN.
 2. Hub app → add device → Wi-Fi → Roku → scan.
-3. It should appear as **Titan Bridge**. If it does not, run
-   `python3 tools/ecp_probe.py --discover` from a laptop on the same network:
-   that tells you whether the problem is the bridge or the hub.
+3. It should appear as **Titan Bridge**.
+
+### What actually makes discovery work  (measured, 2026-09-05)
+
+The obvious model — the app multicasts `M-SEARCH ST: roku:ecp`, the bridge
+answers — is **not** how it succeeded here, and building on that assumption
+cost an afternoon.
+
+On this network the bridge's inbound multicast was unreliable: it received
+searches from two LAN devices but never from the hub, and never from a laptop
+on the same subnet. Its **outbound** announcements, though, were heard fine.
+
+Discovery succeeded the moment the announce interval dropped from 60 s to
+10 s. The app then came straight to the bridge:
+
+```
+[18.681] ECP root <- 10.0.0.124        <- the phone, unprompted
+```
+
+So the SofaBaton app **listens for `ssdp:alive`** rather than depending on its
+own search reaching the device. If it cannot see the bridge:
+
+- **Announce harder.** `GET /api/announce` fires a burst of six. Do that, then
+  scan.
+- Check `/api/log` — the bridge logs **every** SSDP search it sees with the
+  source IP, and every ECP request. `ECP root <- <phone IP>` means discovery
+  worked and the app is deciding whether to list you.
+- `/query/apps` must not be empty. SofaBaton validates that XML before listing
+  the device, so the bridge publishes its macros — built-ins included — to
+  guarantee a non-empty list.
 
 ### Key map
 
