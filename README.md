@@ -1,11 +1,11 @@
 # titan-bridge — XGIMI TITAN Noir control bridge
 
 > **Alpha 0.0.1.** Working on one unit — an XGIMI TITAN Noir Max — and not yet
-> tried anywhere else. The serial channel XGIMI documents does **not** work on
-> this projector (three USB-serial driver classes tried, none bind); everything
-> here runs over **USB HID** instead, which does. Expect the menu-walking macros
-> to be specific to one firmware build. See `logs/TEST-LOG.md` for what was
-> measured rather than assumed.
+> tried anywhere else. Both control channels work: **USB HID** from an ESP32-S3,
+> and **serial** through a USB-serial adapter the projector will actually bind
+> (**FTDI only** — CP2102 and CH340 are never bound, which cost a day to
+> establish). Expect menu-walking macros to be specific to one firmware build.
+> See `logs/TEST-LOG.md` for what was measured rather than assumed.
 
 ## What works
 
@@ -17,8 +17,10 @@
 | Home Assistant | ✅ REST API |
 | SofaBaton X2 | ✅ via Roku ECP emulation; macros appear as launchable apps |
 | Macro recorder + editor | ✅ records real key timing, saves as an editable script |
-| Serial command set (inputs, picture modes, brightness) | ❌ the projector never binds a USB-serial adapter |
-| Verified power state | ❌ no feedback channel, so on/off track an assumption |
+| Serial command set (inputs, picture modes, brightness) | ✅ with an **FTDI** adapter |
+| **HDMI3 — the undocumented third input** | ✅ confirmed real; XGIMI's table omits it |
+| Discrete power **on** | ✅ serial `wake`, no toggle ambiguity |
+| Verified power **state** | ❌ nothing reports it; on/off track an assumption |
 
 
 An ESP32-S3 that gives an XGIMI TITAN Noir Max the discrete control it does not

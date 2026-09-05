@@ -71,7 +71,7 @@ and the bytes sum to 0x29D → 0x9D.
 | HDMI1 | 01 | `2A2A 02 01 01 04` | `hdmi1` |
 | HDMI2 | 02 | `2A2A 02 01 02 05` | `hdmi2` |
 | USB | 14 | `2A2A 02 01 14 17` | `usbsrc` |
-| HDMI3 — **not in the document** | 03 | `2A2A 02 01 03 06` | `hdmi3` |
+| HDMI3 — **not in the document, CONFIRMED REAL 2026-09-05** | 03 | `2A2A 02 01 03 06` | `hdmi3` |
 
 The published table lists two HDMI inputs on a three-HDMI projector, which
 suggests it was copied from the original two-input TITAN. `hdmi3` is included

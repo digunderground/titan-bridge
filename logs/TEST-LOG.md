@@ -115,6 +115,43 @@ model, it does not bind a USB device.
 
 ---
 
+## Serial capability, confirmed on screen — 2026-09-05
+
+Everything below was watched on the projector, not inferred from an ACK. That
+distinction matters: the ACK acknowledges receipt only, and acknowledged every
+parameter tried including `0xFE`.
+
+| Test | Result |
+|---|---|
+| Serial `wake` (`2A2A 07 09 "wakeup" 9D`) from standby | **works — turns the projector on** |
+| Serial navigation, instruction `0x07` | **works — OSD opened, cursor moved three times, exited clean** |
+| **`hdmi3` — the undocumented third input** | **REAL — switches to HDMI 3, twice, in both directions** |
+
+### Test 4 answered: HDMI3 exists
+
+`docs/06` records that XGIMI's table lists HDMI1, HDMI2 and USB only, on a
+projector with three HDMI inputs, and the plan called that "a document copied
+from the two-input original TITAN". It was. Parameter `0x03` on instruction
+`0x01` selects the third input.
+
+### `wake` is a real discrete power-on
+
+Unlike the HID power key (`0x66`), which is a toggle, the documented serial
+`wake` command turns the projector **on** from standby without ambiguity. That
+is strictly better for automation: no assumed state, nothing to drift.
+
+Power **off** still has no verified discrete equivalent — the serial power key
+is a key simulation with a confirmation dialog behind it.
+
+### Serial navigation is the more robust channel
+
+Instruction `0x07` genuinely drives the OSD, so macros can run on serial rather
+than depending on the ESP32's native USB port — which means they survive
+reflashing and unplugging that port. HID remains necessary only for keys serial
+has no equivalent for.
+
+---
+
 ## Test 2 — serial binding: **PASSED with FTDI** — 2026-09-05
 
 `ftdi_sio` is in the projector's kernel. Third driver class tried, and the one
