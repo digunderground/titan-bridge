@@ -34,9 +34,16 @@ TX 2A 2A 02 05 07 0E   brightness 7   ->  RX 2A 2A 02 85 07 8E
 TX 2A 2A 02 13 00 15   temp           ->  RX 2A 2A 02 93 00 95
 ```
 
-**An unsupported command produces no ACK**, which makes the undocumented parts
-of the parameter space testable without watching the screen — including whether
-`hdmi3` is real.
+**The ACK does not indicate support.** It was tempting to read it as one — an
+unsupported command producing no ACK would make the undocumented parameter
+space testable without watching the screen. It does not work: sweeping
+instruction `0x01` produced an ACK for **every** parameter tried, including
+`0x7F`, `0x80`, `0xC0` and `0xFE`, none of which can be real inputs.
+
+So the ACK confirms the frame was received and parsed, and nothing more. It is
+still useful — it proves the link is alive and that a command was well-formed —
+but the only way to know whether a parameter *does* something remains watching
+the screen.
 
 A status postback (e.g. temperature) arrives **six times, ~50 ms apart**, after
 the ACK.

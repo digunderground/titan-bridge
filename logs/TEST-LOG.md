@@ -154,9 +154,15 @@ TX 2A 2A 02 13 00 15    temp           ->  RX 2A 2A 02 93 00 95
 
 **Format: `2A 2A 02 <instruction | 0x80> <parameter echoed> <checksum>`.**
 
-So a command that is *not* supported can be detected by the absence of an ACK
-— which is a direct, non-destructive way to answer questions like whether
-`hdmi3` exists, without needing to watch the screen.
+**It does not indicate support — tested and disproved the same day.** The
+appealing reading was that an unsupported command would go unacknowledged,
+making the undocumented parameter space testable without watching the screen.
+A sweep of instruction `0x01` ACKed **every** parameter tried, including
+`0x7F`, `0x80`, `0xC0` and `0xFE`. The ACK means "received and parsed", full
+stop.
+
+`hdmi3` therefore remains **unproven**. It ACKs, but so does `0xFE`. Only the
+screen can answer it.
 
 ### Also undocumented: status is repeated
 
