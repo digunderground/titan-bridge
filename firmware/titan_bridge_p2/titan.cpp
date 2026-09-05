@@ -313,13 +313,22 @@ bool titanAcked(uint8_t instr, uint32_t withinMs) {
          (millis() - lastAckAt) <= withinMs;
 }
 
-void titanSetKeyChannel(bool useHid) {
+bool titanSetKeyChannel(bool useHid) {
+  // Refuse to route navigation down a serial link that has never answered.
+  // The UI gates this too, but the API is reachable from Home Assistant and a
+  // hub, and the failure mode — every key silently doing nothing — is exactly
+  // the one that cost an evening to diagnose.
+  if (!useHid && !everFrame) {
+    tlog("key channel: refusing serial, no valid frame has ever arrived");
+    return false;
+  }
   keyHid = useHid;
   Preferences p;
   p.begin("titan", false);
   p.putBool("keyhid", useHid);
   p.end();
   tlog("key channel -> %s", titanKeyChannelStr());
+  return true;
 }
 
 static void keyChannelBegin() {
@@ -327,9 +336,15 @@ static void keyChannelBegin() {
   p.begin("titan", true);
   keyHid = p.getBool("keyhid", DEFAULT_KEY_CHANNEL == KEY_CHANNEL_HID);
   p.end();
+  // A saved preference for serial is honoured, but the link has to prove
+  // itself before anything routes down it — titanKey() falls back until then.
+  if (!keyHid) tlog("key channel: serial saved; will use it once a frame arrives");
 }
 
 bool titanKey(const char *name) {
+  // Saved preference says serial, but the link has not spoken yet — use HID
+  // rather than dropping the key on the floor.
+  bool useHid = keyHid || !everFrame;
   // Record the channel-neutral form: a macro recorded while driving HID stays
   // correct if the same projector is later driven over serial, because k:
   // resolves at run time rather than at record time.
@@ -337,7 +352,7 @@ bool titanKey(const char *name) {
   recSuppressNext();
 
   bool ok;
-  if (!keyHid) {
+  if (!useHid) {
     ok = titanSendNamed(name);
   } else {
     // The two vocabularies are not identical. Serial has "setting"; on HID the

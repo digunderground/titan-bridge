@@ -279,15 +279,13 @@ nav.tabs button.sel{color:var(--tx);border-bottom-color:var(--ac)}
 <!-- ============================= SETTINGS ============================= -->
 <main id=p_settings class=hide>
   <div class=card>
-    <h2>Key channel</h2>
+    <h2>Control channel</h2>
     <div class=row>
-      <button id=chser onclick="go('/api/keychan?mode=serial')">Serial</button>
-      <button id=chhid onclick="go('/api/keychan?mode=hid')">HID</button>
+      <button id=chhid onclick="go('/api/keychan?mode=hid')">ESP32 (USB HID)</button>
+      <button id=chser onclick="go('/api/keychan?mode=serial')">Serial adapter</button>
       <span class=sub id=kc></span>
     </div>
-    <p class=sub style=margin:8px_0_0>Navigation travels over whichever channel
-      this projector honours. Explicit <code>h:</code> and <code>s:</code> macro
-      steps ignore this and go where they say.</p>
+    <p class=sub id=chnote style="margin:8px 0 0"></p>
   </div>
 
   <div class=card>
@@ -638,11 +636,24 @@ async function refresh(){
   $('hdr').innerHTML=`<span class="pill ${cls}">${esc(s.power)}</span> &nbsp;${esc(s.ip)} &nbsp;· up ${s.uptime}s`
     +(s.busy?` &nbsp;· <b>${esc(s.busy)}</b>`:'')+(s.macro?` &nbsp;· macro <b>${esc(s.macro)}</b>`:'');
   $('pwrnote').textContent=s.powerobserved?'state is measured':'state is assumed — correct it in Settings';
+  // Serial is only selectable once a valid frame has actually arrived —
+  // otherwise every navigation key would silently do nothing.
   $('chser').className=s.keychan==='serial'?'on':'';
   $('chhid').className=s.keychan==='hid'?'on':'';
+  $('chser').disabled=!s.linkalive;
+  $('chser').title=s.linkalive?'':'No serial adapter has answered';
 
   if(curTab!=='settings')return;   // the rest only exists on the Settings tab
-  $('kc').textContent='active: '+s.keychan+(s.linkalive?'':' — serial link has never answered');
+  $('kc').textContent='active: '+(s.keychan==='hid'?'ESP32 (USB HID)':'Serial adapter');
+  $('chnote').innerHTML = s.linkalive
+    ? 'Both channels are available on this projector. Serial does not depend on the '
+      + 'ESP32\'s native USB port, so it survives being reflashed or unplugged from '
+      + 'that port; HID reaches keys serial has no equivalent for. Explicit '
+      + '<code>h:</code> and <code>s:</code> macro steps ignore this and go where they say.'
+    : '<b class=warn>Serial unavailable.</b> No adapter has ever returned a valid frame, '
+      + 'so that option is disabled — selecting it would leave every navigation key '
+      + 'silently doing nothing. Connect a USB-serial adapter the projector binds '
+      + '(FTDI works; CP2102 and CH340 do not) and it will enable itself.';
   $('pmObey').className=s.powermode==='obey'?'on':'';
   $('pmAssume').className=s.powermode==='assume'?'on':'';
   $('pmnote').textContent=s.powermode==='obey'

@@ -50,7 +50,7 @@ bool        titanKey(const char *name);     // send a key on the current channel
 // to name. See docs/10-hid-key-probe.md.
 bool        titanHidRaw(uint8_t usage);
 bool        titanKeyChannelHid();
-void        titanSetKeyChannel(bool useHid);
+bool        titanSetKeyChannel(bool useHid);   // false = refused, link dead
 const char *titanKeyChannelStr();           // "serial" | "hid"
 
 // Has this serial link ever delivered a **checksum-valid frame**? Distinguishes

@@ -185,7 +185,12 @@ static void uiRoutes() {
   ui.on("/api/status", HTTP_ANY, []() { okJson(ui, statusJson()); });
   ui.on("/api/keychan", HTTP_ANY, []() {
     String m = ui.arg("mode");
-    if (m == "hid" || m == "serial") titanSetKeyChannel(m == "hid");
+    if (m == "hid" || m == "serial") {
+      if (!titanSetKeyChannel(m == "hid")) {
+        okText(ui, "refused: the serial link has never answered");
+        return;
+      }
+    }
     okJson(ui, statusJson());
   });
   ui.on("/api/log",    HTTP_ANY, []() { cors(ui); ui.send(200, "text/plain", logDump()); });
