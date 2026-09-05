@@ -87,6 +87,12 @@ void netBegin() {
     return;
   }
 
+  // Re-assert after the association completes. Setting it before WiFi.begin()
+  // does not reliably survive the connect, and once power save is on the AP
+  // buffers multicast into DTIM windows the station then misses — which looks
+  // exactly like "SSDP works for a few seconds after boot, then stops".
+  WiFi.setSleep(false);
+
   tlog("Wi-Fi: %s  rssi %d dBm", WiFi.localIP().toString().c_str(), WiFi.RSSI());
   if (MDNS.begin(MDNS_HOST)) {
     MDNS.addService("http", "tcp", UI_PORT);

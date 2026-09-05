@@ -576,6 +576,8 @@ String buttonsJson() {
 
 #define MACRO_APP_BASE 100
 
+// User macros first, then built-ins that are not shadowed — the same order
+// macroListJson() uses, so an app id means the same thing in both.
 String macroNameByIndex(int idx) {
   int i = 0, n = 0;
   while (i < (int)userStore.length()) {
@@ -587,7 +589,29 @@ String macroNameByIndex(int idx) {
     }
     i = e + 1;
   }
+  for (size_t k = 0; k < NBUILTINS; k++) {
+    if (storeFind(BUILTINS[k].name) >= 0) continue;
+    if (n == idx) return String(BUILTINS[k].name);
+    n++;
+  }
   return String();
+}
+
+// SofaBaton fetches /query/apps and validates the XML before listing the
+// device, so this must never be empty — an empty <apps/> is a plausible
+// rejection, and it was empty whenever no user macros had been saved yet.
+// Built-ins are published too, which also gives the hub something useful.
+static void appendAppXml(String &x, int id, const String &name) {
+  x += "<app id=\""; x += id;
+  x += "\" type=\"appl\" version=\"1.0.0\">";
+  for (size_t c = 0; c < name.length(); c++) {
+    char ch = name[c];
+    if      (ch == '&') x += "&amp;";
+    else if (ch == '<') x += "&lt;";
+    else if (ch == '>') x += "&gt;";
+    else x += ch;
+  }
+  x += "</app>";
 }
 
 String macroAppsXml() {
@@ -597,20 +621,15 @@ String macroAppsXml() {
     int e = userStore.indexOf('\n', i); if (e < 0) e = userStore.length();
     String nm, g, sc; splitLine(userStore.substring(i, e), nm, g, sc);
     if (nm.length()) {
-      x += "<app id=\""; x += (MACRO_APP_BASE + n);
-      x += "\" type=\"appl\" version=\"1.0.0\">";
-      // XML text, so the few characters that would break the document.
-      for (size_t c = 0; c < nm.length(); c++) {
-        char ch = nm[c];
-        if      (ch == '&') x += "&amp;";
-        else if (ch == '<') x += "&lt;";
-        else if (ch == '>') x += "&gt;";
-        else x += ch;
-      }
-      x += "</app>";
+      appendAppXml(x, MACRO_APP_BASE + n, nm);
       n++;
     }
     i = e + 1;
+  }
+  for (size_t k = 0; k < NBUILTINS; k++) {
+    if (storeFind(BUILTINS[k].name) >= 0) continue;
+    appendAppXml(x, MACRO_APP_BASE + n, String(BUILTINS[k].name));
+    n++;
   }
   return x;
 }

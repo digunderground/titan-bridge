@@ -11,7 +11,13 @@
 
 static WebServer ui(UI_PORT);
 static WebServer ecp(ECP_PORT);
-static WiFiUDP   ssdp;
+// Two sockets, deliberately. Sending with beginPacket()/endPacket() on this
+// stack reconfigures the socket and drops its multicast group membership, so a
+// single object that both announces and listens stops receiving within seconds
+// of every announcement. Measured before the split: inbound SSDP arrived only
+// in a brief window after each beginMulticast() and then never again.
+static WiFiUDP   ssdpRx;     // joined to 239.255.255.250:1900, receive only
+static WiFiUDP   ssdpTx;     // sends replies and NOTIFY, never joined
 static uint32_t  notifyAt = 0;
 static char      serialNo[16];
 static char      deviceId[16];
@@ -383,9 +389,14 @@ static String rootDescXml() {
 
 static void ecpRoutes() {
   ecp.on("/", HTTP_GET, []() {
+    tlog("ECP root <- %s", ecp.client().remoteIP().toString().c_str());
     ecp.send(200, "text/xml; charset=\"utf-8\"", rootDescXml());
   });
+  // Log who asks. A hub that probes and then declines is a different problem
+  // from a hub that never finds us, and the two are indistinguishable from
+  // outside the device.
   ecp.on("/query/device-info", HTTP_GET, []() {
+    tlog("ECP device-info <- %s", ecp.client().remoteIP().toString().c_str());
     ecp.send(200, "text/xml; charset=\"utf-8\"", deviceInfoXml());
   });
   ecp.on("/query/apps", HTTP_GET, []() {
@@ -419,6 +430,7 @@ static void ecpRoutes() {
   // /keypress/<Key>, /keydown/<Key>, /keyup/<Key>, /launch/<id>, /input
   ecp.onNotFound([]() {
     String u = ecp.uri();
+    tlog("ECP %s <- %s", u.c_str(), ecp.client().remoteIP().toString().c_str());
 
     auto tail = [&](const char *pfx) -> String {
       if (!u.startsWith(pfx)) return String();
@@ -476,9 +488,9 @@ static void ssdpRespond(const IPAddress &to, uint16_t port) {
     "device-group.roku.com: %s\r\n"
     "\r\n",
     serialNo, netIp().c_str(), ECP_PORT, deviceId);
-  ssdp.beginPacket(to, port);
-  ssdp.write((const uint8_t *)buf, n);
-  ssdp.endPacket();
+  ssdpTx.beginPacket(to, port);
+  ssdpTx.write((const uint8_t *)buf, n);
+  ssdpTx.endPacket();
 }
 
 static void ssdpNotify() {
@@ -495,30 +507,52 @@ static void ssdpNotify() {
     "device-group.roku.com: %s\r\n"
     "\r\n",
     serialNo, netIp().c_str(), ECP_PORT, deviceId);
-  ssdp.beginPacket(IPAddress(239, 255, 255, 250), 1900);
-  ssdp.write((const uint8_t *)buf, n);
-  ssdp.endPacket();
+  ssdpTx.beginPacket(IPAddress(239, 255, 255, 250), 1900);
+  ssdpTx.write((const uint8_t *)buf, n);
+  ssdpTx.endPacket();
 }
 
 static void ssdpLoop() {
-  int len = ssdp.parsePacket();
+  int len = ssdpRx.parsePacket();
   if (len > 0) {
     char buf[512];
-    int n = ssdp.read(buf, sizeof(buf) - 1);
+    int n = ssdpRx.read(buf, sizeof(buf) - 1);
     if (n > 0) {
       buf[n] = 0;
       if (strncasecmp(buf, "M-SEARCH", 8) == 0) {
-        // Answer roku:ecp searches, and the broad ones a hub might use.
-        if (containsCI(buf, "roku:ecp") || containsCI(buf, "ssdp:all") ||
-            containsCI(buf, "upnp:rootdevice")) {
-          ssdpRespond(ssdp.remoteIP(), ssdp.remotePort());
-          tlog("SSDP: answered %s", ssdp.remoteIP().toString().c_str());
+        // Log every search, matched or not. "We never saw the hub ask" and
+        // "we saw it ask for something we don't answer" look identical from
+        // the outside and need completely different fixes.
+        char st[64] = "?";
+        const char *p = buf;
+        while (*p) {
+          if (!strncasecmp(p, "ST:", 3)) {
+            p += 3;
+            while (*p == ' ') p++;
+            size_t k = 0;
+            while (*p && *p != '\r' && *p != '\n' && k < sizeof(st) - 1) st[k++] = *p++;
+            st[k] = 0;
+            break;
+          }
+          while (*p && *p != '\n') p++;
+          if (*p) p++;
         }
+        bool match = containsCI(buf, "roku:ecp") || containsCI(buf, "ssdp:all") ||
+                     containsCI(buf, "upnp:rootdevice");
+        if (match) ssdpRespond(ssdpRx.remoteIP(), ssdpRx.remotePort());
+        tlog("SSDP %s from %s ST=%s", match ? "ANSWERED" : "ignored",
+             ssdpRx.remoteIP().toString().c_str(), st);
       }
     }
   }
   if ((int32_t)(millis() - notifyAt) >= 0) {
     notifyAt = millis() + SSDP_NOTIFY_INTERVAL_MS;
+    // Re-join the group before announcing. Multicast membership on this stack
+    // has been observed to lapse a few seconds after boot — measured: the
+    // bridge received SSDP from two LAN devices between t=3s and t=10s and
+    // then never again, while searches from a laptop on the same subnet never
+    // arrived at all. Re-arming is cheap and makes the failure self-healing
+    // rather than requiring a reboot.
     ssdpNotify();
   }
 }
@@ -541,7 +575,8 @@ void ecpBegin() {
   ecpRoutes();
   ecp.begin();
   if (!netApMode()) {
-    ssdp.beginMulticast(IPAddress(239, 255, 255, 250), 1900);
+    ssdpRx.beginMulticast(IPAddress(239, 255, 255, 250), 1900);
+    ssdpTx.begin(0);                 // ephemeral port, send only
     notifyAt = millis() + 3000;
   }
   tlog("Roku ECP on http://%s:%d/ (serial %s)", netIp().c_str(), ECP_PORT, serialNo);
