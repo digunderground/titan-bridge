@@ -67,22 +67,30 @@ pre{background:#0b0e14;border:1px solid var(--ln);border-radius:7px;padding:10px
 
 <div class=card>
   <h2>Source &amp; picture</h2>
+  <p class=sub style="margin:0 0 8px">Serial only — these have no HID equivalent, so
+  they do nothing on a projector whose serial daemon never binds. Use menu macros.</p>
   <div class=grid id=quick></div>
 </div>
 
 <div class=card>
   <h2>Navigation</h2>
   <div class=nav>
-    <span></span><button onclick="go('/api/cmd?name=up')">▲</button><span></span>
-    <button onclick="go('/api/cmd?name=left')">◀</button>
-    <button onclick="go('/api/cmd?name=ok')">OK</button>
-    <button onclick="go('/api/cmd?name=right')">▶</button>
-    <span></span><button onclick="go('/api/cmd?name=down')">▼</button><span></span>
+    <span></span><button onclick="go('/api/nav?name=up')">▲</button><span></span>
+    <button onclick="go('/api/nav?name=left')">◀</button>
+    <button onclick="go('/api/nav?name=ok')">OK</button>
+    <button onclick="go('/api/nav?name=right')">▶</button>
+    <span></span><button onclick="go('/api/nav?name=down')">▼</button><span></span>
+  </div>
+  <div class=row style="margin-top:10px;align-items:center;gap:8px">
+    <span class=sub>Key channel</span>
+    <button onclick="go('/api/keychan?mode=serial')">serial</button>
+    <button onclick="go('/api/keychan?mode=hid')">HID</button>
+    <span class=sub id=kc></span>
   </div>
   <div class=grid style=margin-top:10px;justify-content:center>
-    <button onclick="go('/api/cmd?name=back')">Back</button>
-    <button onclick="go('/api/cmd?name=home')">Home</button>
-    <button onclick="go('/api/cmd?name=setting')">Settings</button>
+    <button onclick="go('/api/nav?name=back')">Back</button>
+    <button onclick="go('/api/nav?name=home')">Home</button>
+    <button onclick="go('/api/nav?name=setting')">Settings</button>
     <button onclick="go('/api/hid?key=menu')" title="HID only — no serial equivalent">Menu (HID)</button>
     <button onclick="go('/api/cmd?name=autofocus')">Autofocus</button>
   </div>
@@ -181,12 +189,15 @@ async function refresh(){
   $('wifiCard').style.display=s.ap?'block':'none';
   const rows=[['Power state',s.power],['Temperature',s.temp],['Link',s.link],
     ['Native CDC port',s.cdc?'open (host bound it)':'not open'],
+    ['Key channel',s.keychan],
+    ['Serial link',s.linkalive?'alive — a valid frame has arrived':'never received a valid frame'],
     ['Frames sent',s.tx],['Bytes received',s.rx],
     ['Last reply',s.since<0?'never':s.since+' ms ago'],['Last frame',s.lastrx],
     ['Wi-Fi',(s.ap?'setup AP ':'')+esc(s.ssid)+' · '+esc(s.ip)],['Firmware',esc(s.fw)]];
   $('st').innerHTML=rows.map(([k,x])=>`<tr><td class=k>${k}</td><td>${x}</td></tr>`).join('');
   $('log').textContent=await (await fetch('/api/log')).text();
   $('log').scrollTop=$('log').scrollHeight;
+  $('kc').textContent='active: '+s.keychan+(s.linkalive?'':' (serial link never answered)');
   if(s.irlast)$('irlast').textContent='last IR code seen: '+s.irlast;
 }
 loadMacros();loadIr();refresh();setInterval(refresh,2500);

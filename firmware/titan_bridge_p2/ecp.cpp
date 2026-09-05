@@ -29,22 +29,26 @@ static int brightness = 7;
 // ===========================================================================
 struct EcpKey { const char *key; const char *action; };
 
+// Navigation uses k: so it follows the active key channel. On a projector
+// whose serial daemon never binds, s: here meant every SofaBaton arrow key
+// was silently dead. Input and picture entries stay on s: — they have no HID
+// equivalent at all and need menu macros instead.
 static const EcpKey ECPMAP[] = {
   { "PowerOn",     "p:on"    },
   { "PowerOff",    "p:off"   },
   { "Power",       "p:toggle"},
 
-  { "Up",          "s:up"    },
-  { "Down",        "s:down"  },
-  { "Left",        "s:left"  },
-  { "Right",       "s:right" },
-  { "Select",      "s:ok"    },
-  { "Back",        "s:back"  },
-  { "Home",        "s:home"  },
-  { "Options",     "s:setting" },
+  { "Up",          "k:up"    },
+  { "Down",        "k:down"  },
+  { "Left",        "k:left"  },
+  { "Right",       "k:right" },
+  { "Select",      "k:ok"    },
+  { "Back",        "k:back"  },
+  { "Home",        "k:home"  },
+  { "Options",     "k:setting" },
 
-  { "VolumeUp",    "s:volup" },
-  { "VolumeDown",  "s:voldn" },
+  { "VolumeUp",    "k:volup" },
+  { "VolumeDown",  "k:voldn" },
   { "VolumeMute",  "s:mute"  },
 
   { "InputHDMI1",  "s:hdmi1" },
@@ -177,6 +181,10 @@ static void uiRoutes() {
   ui.on("/api/cmd", HTTP_ANY, []() {
     String n = argOr(ui, "name");
     okText(ui, titanSendNamed(n.c_str()) ? "ok" : "unknown command");
+  });
+  ui.on("/api/nav", HTTP_ANY, []() {      // navigation on the active channel
+    String n = argOr(ui, "name");
+    okText(ui, titanKey(n.c_str()) ? "ok" : "key failed on this channel");
   });
   ui.on("/api/hid", HTTP_ANY, []() {
     String k = argOr(ui, "key");

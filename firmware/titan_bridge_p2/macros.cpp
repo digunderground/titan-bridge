@@ -27,16 +27,16 @@ static const BuiltIn BUILTINS[] = {
     "p:off" },
 
   { "anchortest", "prove the anchor works: unwind to root, open settings, leave",
-    "s:back*3; d400; s:setting; d800; s:back*3" },
+    "k:back*3; d400; k:setting; d800; k:back*3" },
 
   // ---- templates for the deep features the serial set cannot reach ----
   // Fill in the counted paths from your §2 menu photographs, then save them
   // with macdef so they persist. Left deliberately short and obvious.
   { "tpl3d",   "TEMPLATE - 3D mode. Replace the counted path before use.",
-    "anchor; d500; s:down*0; s:ok; d400; s:back*3" },
+    "anchor; d500; k:down*0; k:ok; d400; k:back*3" },
 
   { "tpllens", "TEMPLATE - lens memory. Replace the counted path before use.",
-    "anchor; d500; s:down*0; s:ok; d400; s:back*3" },
+    "anchor; d500; k:down*0; k:ok; d400; k:back*3" },
 };
 static const size_t NBUILTINS = sizeof(BUILTINS) / sizeof(BUILTINS[0]);
 
