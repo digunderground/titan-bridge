@@ -342,25 +342,34 @@ static void keyChannelBegin() {
 }
 
 bool titanKey(const char *name) {
-  // Saved preference says serial, but the link has not spoken yet — use HID
-  // rather than dropping the key on the floor.
-  bool useHid = keyHid || !everFrame;
-  // Record the channel-neutral form: a macro recorded while driving HID stays
-  // correct if the same projector is later driven over serial, because k:
-  // resolves at run time rather than at record time.
+  // Record the channel-neutral form: a macro recorded while driving one channel
+  // stays correct on the other, because k: resolves at run time.
   recCapture((String("k:") + name).c_str());
   recSuppressNext();
 
-  bool ok;
-  if (!useHid) {
-    ok = titanSendNamed(name);
+  // Saved preference says serial, but the link has not spoken yet — use HID
+  // rather than dropping the key on the floor.
+  bool useHid = keyHid || !everFrame;
+
+  // The two vocabularies diverge, and translation has to work BOTH ways or a
+  // key silently dies on one channel. Serial calls the OSD key "setting"
+  // (0x07 0x0F); on HID the key that opens it is Home (0x4A), bound as "menu".
+  const char *n = name;
+  if (useHid) {
+    if (!strcasecmp(name, "setting")) n = "menu";
   } else {
-    // The two vocabularies are not identical. Serial has "setting"; on HID the
-    // key that opens this projector's OSD is Home (0x4A), bound as "menu".
-    const char *n = (!strcasecmp(name, "setting")) ? "menu" : name;
-    ok = titanHid(n);
+    if (!strcasecmp(name, "menu")) n = "setting";
   }
-  recSuppressClear();   // in case the dispatch returned before capturing
+
+  bool ok = useHid ? titanHid(n) : titanSendNamed(n);
+  recSuppressClear();
+
+  if (!ok) {
+    // Say which channel refused it. "Unknown key" alone sent me looking at the
+    // key when the key was fine and the channel had no equivalent for it.
+    tlog("key '%s' has no equivalent on the %s channel", name,
+         useHid ? "HID" : "serial");
+  }
   return ok;
 }
 
