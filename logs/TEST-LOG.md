@@ -94,6 +94,21 @@ MCU — it is exactly how `esptool` reboots it (`Hard resetting via RTS pin`).
 **The projector never asserted DTR, so it never opened the port.** This is not
 a daemon that binds and ignores us; it is a daemon that never binds.
 
+### Why `rx = 0` is stronger evidence than it looks
+
+`rxBytes++` is the first statement in `rxByte()`, before the `2A 2A` header
+check (`titan.cpp`). The counter therefore counts **every byte that arrives on
+the wire**, whatever its header, framing or validity.
+
+So `rx = 0` does not mean "replies arrived that we could not parse" — the
+obvious worry once the projector turns out to have ID addressing. It means no
+byte was ever received. The receive line is electrically silent.
+
+Diagnostic to remember for the CH340/PL2303 attempts: if `rx` climbs while the
+log shows no `RX` lines, that is bytes arriving that never frame up — which
+*would* mean an unexpected header, and addressing would be back on the table.
+`rx` static at 0 rules that out.
+
 ### Serial Port Control menu, as found
 
 ```
