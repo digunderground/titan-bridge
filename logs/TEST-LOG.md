@@ -49,7 +49,7 @@ in for the projector.
 ```
 
 `/api/status`: `power=awake  temp=normal  rx=14  lastrx="2A 2A 03 13 01 00 17"`
-Wi-Fi `Nexus` → 10.0.0.215, rssi −55 dBm. mDNS and Roku ECP both up
+Wi-Fi `<your-ssid>` → 10.0.0.215, rssi −55 dBm. mDNS and Roku ECP both up
 (`TB9E9C8544` on :8060).
 
 | Layer | Result |
