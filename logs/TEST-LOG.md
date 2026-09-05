@@ -68,6 +68,53 @@ single remaining unknown: whether its serial daemon binds the bridge chip.
 
 ---
 
+## Test 1 — HID via the bridge: **PASSED** — 2026-09-05
+
+**The projector is under control.** ESP32-S3-DevKitC-1, `titan_bridge_p2` built
+with `BOARD=1`, native USB port straight into a projector USB port, board
+powered from that same port, commanded entirely over Wi-Fi from another room.
+
+```
+[69.634] key channel -> hid
+[71.703] HID home (0x4A)      -> OSD opened
+[74.779] HID down (0x51)      -> selection moved
+[76.857] HID down (0x51)
+[79.026] HID down (0x51)
+[81.116] HID up (0x52)
+[83.186] HID menu (0x65)
+```
+
+Observed on screen: **the menu opened and the selection moved.**
+
+Build that did it:
+
+```
+esp32:esp32:esp32s3:USBMode=default,CDCOnBoot=default,FlashSize=16M,PartitionScheme=min_spiffs
+-DBOARD=1
+```
+
+`USBMode=default` (USB-OTG/TinyUSB) is not optional — under the `hwcdc`
+default the HID interface never enumerates and none of this happens.
+
+### What this settles
+
+The plan had serial as the primary channel and HID as a gap-filler for Menu
+and manual focus. **That is now inverted.** Serial does not exist on this
+projector; HID does, and it carries the navigation the macro engine needs.
+`keychan hid` makes that the routing for `anchor` and every `k:` step, so the
+counted paths in `docs/05` and `docs/10` work unchanged.
+
+The native USB port also enumerates as `Titan Bridge` / `DIY` (VID 0x303A).
+
+### Still not working, and now confirmed twice
+
+`cdc=false` throughout: the projector never opened the native CDC endpoint
+either. Test 2 has now failed in **both** its forms — native CDC on an S3, and
+a CP2102 USB-serial adapter. Whatever XGIMI's Serial Port Control does on this
+model, it does not bind a USB device.
+
+---
+
 ## Test 2 — CDC/serial binding: **FAILED** — 2026-09-04
 
 The projector does not bind a CP2102 as a serial device. Not a wiring problem,

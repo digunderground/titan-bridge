@@ -9,14 +9,19 @@ The Noir has no IR receiver, no PJLink, no smart OS and therefore no ADB. What
 XGIMI documents is **RS232 over a USB adapter, at 115200 8N1**, once you turn on
 Settings → General → Serial Port Control.
 
-> **Status, 2026-09-04.** That premise does not hold on this unit yet. A CP2102
-> is never bound — the projector does not open the port at all. A plain USB
-> **keyboard**, however, drives the OSD perfectly, so the HID channel works
-> where the serial one does not. Adapters with other driver chips are on the
-> way; see [`logs/TEST-LOG.md`](logs/TEST-LOG.md) for the evidence and
-> [`docs/11-adapter-driver-test.md`](docs/11-adapter-driver-test.md) for what
-> happens next. The bridge can now route menu navigation over either channel
-> (`keychan serial|hid`), so this is a setting rather than a rewrite.
+> **Status, 2026-09-05. The bridge controls the projector — over USB HID, not
+> serial.** An ESP32-S3-DevKitC-1 with its native USB port in a projector USB
+> port opens the OSD and moves the selection, commanded over Wi-Fi from another
+> room. `keychan hid` routes `anchor` and every `k:` macro step down that
+> channel, so the counted menu paths work unchanged.
+>
+> Serial does not work on this unit, in either form: a CP2102 adapter is never
+> bound, and the S3's native CDC endpoint is never opened. Whatever Serial Port
+> Control does here, it does not bind a USB device. Adapters with other driver
+> chips are still worth trying — see
+> [`docs/11-adapter-driver-test.md`](docs/11-adapter-driver-test.md) — but they
+> are now an optimisation, not the critical path.
+> Evidence in [`logs/TEST-LOG.md`](logs/TEST-LOG.md).
 
 ---
 
