@@ -271,8 +271,12 @@ static void uiRoutes() {
     okText(ui, macroDefineIn(n.c_str(), g.c_str(), sc.c_str()) ? "ok" : "failed");
   });
   ui.on("/api/macdef", HTTP_ANY, []() {
-    okText(ui, macroDefine(argOr(ui, "name").c_str(), argOr(ui, "script").c_str())
-               ? "saved" : "bad name or script");
+    // An absent group means "keep the one it already has", so editing a script
+    // from a client that does not send the field cannot silently ungroup it.
+    String n = argOr(ui, "name");
+    String g = ui.hasArg("group") ? ui.arg("group") : macroGroup(n.c_str());
+    okText(ui, macroDefineIn(n.c_str(), g.c_str(), argOr(ui, "script").c_str())
+               ? "saved" : "bad name or script, or store full");
   });
   ui.on("/api/macdel", HTTP_ANY, []() {
     okText(ui, macroDelete(argOr(ui, "name").c_str()) ? "deleted" : "not found");

@@ -32,12 +32,40 @@ InputHDMI1–4 — which maps onto this projector almost too neatly.
 
 | ECP key | Action | Firmware |
 |---|---|---|
-| PowerOn / PowerOff / Power | verified power, idempotent | `p:on` `p:off` `p:toggle` |
-| Up / Down / Left / Right | navigation | `s:up` … |
-| Select / Back / Home | OK / Back / Home | `s:ok` `s:back` `s:home` |
-| Options | Settings | `s:setting` |
-| VolumeUp / VolumeDown / VolumeMute | volume | `s:volup` `s:voldn` `s:mute` |
+| PowerOn / PowerOff / Power | power | `p:on` `p:off` `p:toggle` |
+| Up / Down / Left / Right | navigation | `k:up` … |
+| Select / Back / Home | OK / Back / Home | `k:ok` `k:back` `k:home` |
+| Options | Settings / menu | `k:setting` |
+| VolumeUp / VolumeDown | volume | `k:volup` `k:voldn` |
+| VolumeMute | mute | `s:mute` |
 | InputHDMI1 / 2 / 3 | source select | `s:hdmi1` … |
+
+Navigation is `k:`, which follows the **active key channel** rather than being
+hardwired to serial. On the TITAN Noir Max the serial daemon never binds, so
+every one of these travels over USB HID — and it works. Had these stayed `s:`
+the hub's arrow keys would have been silently inert.
+
+The `s:` entries that remain have no HID equivalent. On a projector without a
+working serial channel they do nothing, and the fix is a recorded menu macro
+bound to a button (below) rather than an ECP key.
+
+### Macros as Roku apps — reaching the hub beyond the key map
+
+A Roku remote has a fixed button layout, so a macro has no key to live on. But
+Roku also has **apps**, and a hub can launch one by id. Every saved macro is
+therefore published in `/query/apps` with an id from 100 up:
+
+```xml
+<apps><app id="100" type="appl" version="1.0.0">movie night</app></apps>
+```
+
+`POST /launch/100` runs it. In the SofaBaton app the macros appear alongside
+the device's other shortcuts, which is how anything you record reaches the hub
+without inventing a protocol.
+
+The HDMI1–4 apps are published **only when the serial link has actually
+answered**. On this projector it never does, so they are omitted rather than
+appearing as four dead buttons.
 | InputHDMI4 / InputAV1 | USB source | `s:usbsrc` |
 | Play / Rev / Fwd | Filmmaker / Movie / Vivid | picture presets |
 | Info / InstantReplay | brightness step up / down | open loop |
