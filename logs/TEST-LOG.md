@@ -157,6 +157,23 @@ displaying a confident guess.
 `TEMP_PROBE_INDICATES_POWER` in `config.h` re-enables the old inference for a
 projector that is actually shown to go quiet in standby.
 
+### Commands sent in standby are honoured — input can be pre-selected
+
+The projector was left on HDMI3 and switched off. With it off, `hdmi1` was sent
+(ACKed), then `wake` (ACKed). **It powered on displaying HDMI1.**
+
+So the serial daemon does not merely answer queries in standby — it acts on
+commands. A "movie night" macro can therefore be a single sequence that wakes
+the projector *straight onto* the right input, with no menu walk and no waiting
+for the OSD to settle:
+
+```
+s:hdmi1; d200; s:wake
+```
+
+Whether the projector executes the command while asleep or queues it and
+applies it at wake is not observable from outside, and does not matter.
+
 ### `wake` is a real discrete power-on
 
 Unlike the HID power key (`0x66`), which is a toggle, the documented serial
