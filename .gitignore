@@ -14,3 +14,14 @@ __pycache__/
 docs/graph.json
 docs/graph.html
 .remotes.json
+
+# Harness scaffolding — kept on disk, not published. It points at a private
+# local toolchain (~/.primer) and is not part of this project.
+.claude/
+.githooks/
+opencode.json
+.primer-version.json
+AGENTS.md
+CLAUDE.md
+docs/atoms/
+docs/RECALL.md
