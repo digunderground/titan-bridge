@@ -123,14 +123,44 @@ Serial Port Response (All)   ON
 image, and **that image documents no ID field at all**. The firmware exposes
 group/ID addressing the protocol document does not describe.
 
-### The leading explanation
+### The leading explanation: a missing kernel driver
 
-Group + ID addressing is a **multi-projector daisy-chain feature** for
-commercial installs. Finding it on a consumer home-theatre projector, attached
-to a serial stack that never opens a port, suggests the whole Serial Port
-Control page may be inherited UI from a shared firmware base with a commercial
-sibling that has a real DB9 — present in the menu, unimplemented in the
-hardware. Not proven. But it fits every observation.
+An earlier theory here — that the Serial Port Control page was vestigial UI
+inherited from a commercial sibling with a real DB9 — is **wrong, and is
+retracted**. Checked against sources:
+
+- XGIMI's own article is titled *"How to use the RS232 on the TITAN?"* and
+  describes only enabling the setting and configuring 115200 8N1. It is real.
+- The TITAN Noir has **no DB9**. Its ports are 2×HDMI, 2×USB, RJ45, 3.5 mm.
+- Third-party reporting states the projector "will recognize an RS232/USB
+  adapter when connected to one of its USB ports and then offer remote control
+  via the serial port."
+
+So the USB-adapter premise this project is built on is correct, and the feature
+is genuinely implemented. What is far more likely is that **the projector's
+kernel does not carry `cp210x`.**
+
+Embedded Linux builds ship a subset of the USB-serial drivers. If `cp210x` is
+absent, a CP2102 never becomes a `/dev/ttyUSB*` at all — so nothing opens it,
+nothing asserts DTR, and the receive line stays electrically silent. Every
+observation follows from that one fact, and it is consistent with the DTR
+evidence rather than in tension with it.
+
+This makes the adapters on order the decisive test, not a long shot. `ftdi_sio`
+and `pl2303` are the most commonly bundled drivers in SoC vendor kernels, with
+`ch341` close behind — and a **genuine FTDI** is the single likeliest to work.
+
+### The ID settings are real, and need no change
+
+Group + ID addressing is an RS232 daisy-chain feature for multi-projector
+installs, and its presence is evidence the protocol was designed with
+addressing that XGIMI's published command image simply does not document. The
+`2A 2A` header is ASCII `**` — two wildcards, i.e. the broadcast form of an
+addressed protocol.
+
+`Group A / ID 0` with **Response (Group)** and **Response (All)** both ON is
+already the most permissive configuration available. Nothing to change, and the
+bridge implements no addressing to match it against.
 
 ### Still untested
 
