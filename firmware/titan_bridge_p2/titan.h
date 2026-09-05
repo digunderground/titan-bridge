@@ -65,6 +65,13 @@ bool        titanLinkEverRx();
 bool        titanUsbPowerKnown();
 bool        titanUsbAwake();
 
+// When nothing about the projector is observable, the bridge tracks what it
+// last did. titanAssumeState() corrects that from outside — after someone uses
+// the real remote, or on first setup.
+bool        titanAssumedKnown();
+bool        titanAssumedOn();
+void        titanAssumeState(bool on);
+
 // -------------------------------- status -----------------------------------
 enum PowerState { PWR_UNKNOWN = 0, PWR_AWAKE, PWR_ASLEEP };
 

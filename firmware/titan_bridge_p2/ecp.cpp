@@ -134,6 +134,7 @@ String statusJson() {
   // this API — which is exactly the confusion that cost an evening.
   j += "\"linkalive\":"; j += titanLinkEverRx() ? "true" : "false"; j += ",";
   j += "\"keychan\":\""; j += titanKeyChannelStr(); j += "\",";
+  j += "\"powerobserved\":"; j += titanUsbPowerKnown() ? "true" : "false"; j += ",";
   j += "\"ssid\":\"";   jesc(j, netSsid());   j += "\",";
   j += "\"ip\":\"";     j += netIp();         j += "\",";
   j += "\"ap\":";       j += netApMode() ? "true" : "false"; j += ",";
@@ -206,6 +207,12 @@ static void uiRoutes() {
   });
   ui.on("/api/power", HTTP_ANY, []() {
     String st = argOr(ui, "state", "toggle");
+    if (st == "sync") {                    // correct the assumed state, send nothing
+      String is = argOr(ui, "is", "on");
+      titanAssumeState(is == "on");
+      okJson(ui, statusJson());
+      return;
+    }
     if      (st == "on")  titanPowerOn();
     else if (st == "off") titanPowerOff();
     else                  titanPowerToggle();

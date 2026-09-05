@@ -157,14 +157,19 @@ const size_t NHIDKEYS = sizeof(HIDKEYS) / sizeof(HIDKEYS[0]);
 static volatile bool usbSuspended = false;
 static volatile bool usbStateKnown = false;
 
+// Only a real SUSPEND/RESUME transition proves anything about the *host*.
+// STARTED fires when our own device stack initialises, which says nothing
+// about whether the projector is awake — trusting it made the bridge believe
+// a projector was on when it had just switched it off, so the next "off"
+// fired the toggle again and turned it back on. Measured on a TITAN Noir Max:
+// this projector does NOT suspend the bus in standby, so usbStateKnown stays
+// false here and the power state honestly reports that it cannot tell.
 static void usbEventCb(void *, esp_event_base_t base, int32_t id, void *) {
   if (base != ARDUINO_USB_EVENTS) return;
   switch (id) {
     case ARDUINO_USB_SUSPEND_EVENT: usbSuspended = true;  usbStateKnown = true; break;
     case ARDUINO_USB_RESUME_EVENT:  usbSuspended = false; usbStateKnown = true; break;
-    case ARDUINO_USB_STARTED_EVENT: usbSuspended = false; usbStateKnown = true; break;
-    case ARDUINO_USB_STOPPED_EVENT: usbSuspended = true;  usbStateKnown = true; break;
-    default: break;
+    default: break;   // STARTED/STOPPED describe us, not the host
   }
 }
 bool titanUsbPowerKnown() { return usbStateKnown; }
@@ -184,6 +189,7 @@ static int8_t   lastTemp = -1;
 static char     lastRxHex[52] = "-";
 
 static PowerState pwr = PWR_UNKNOWN;
+static bool       assumedOn = false, assumedKnown = false;
 static uint8_t    pollMisses = 0;
 
 uint32_t    titanTxFrames()  { return txFrames; }
@@ -201,8 +207,11 @@ const char *titanPowerStr() {
   switch (pwr) {
     case PWR_AWAKE:  return "awake";
     case PWR_ASLEEP: return "asleep";
-    default:         return "unknown";
+    default: break;
   }
+  // Nothing observable — say so, rather than dressing a guess up as a reading.
+  if (assumedKnown) return assumedOn ? "on (assumed)" : "off (assumed)";
+  return "unknown";
 }
 
 const char *titanTempStr() {
@@ -443,6 +452,34 @@ static bool probeAnswered() {
 // can see the current state. USB bus suspend gives us exactly that, which is
 // what makes this safe to expose as PowerOn/PowerOff to Home Assistant and the
 // Roku emulation rather than a single ambiguous Toggle.
+// No observable liveness on this projector: serial never binds, and the USB
+// bus stays fully awake through standby. So the bridge tracks what it *did* —
+// the same thing an IR remote macro does — and says plainly that the state is
+// assumed. /api/power?state=sync corrects it when a human uses the real remote.
+
+bool titanAssumedKnown() { return assumedKnown; }
+bool titanAssumedOn()    { return assumedOn; }
+
+void titanAssumeState(bool on) {
+  assumedOn = on; assumedKnown = true;
+  Preferences p; p.begin("titan", false);
+  p.putBool("pwron", on); p.putBool("pwrk", true); p.end();
+  tlog("power state assumed %s (told, not sent)", on ? "on" : "off");
+}
+
+static void assumeAfterToggle(bool nowOn) {
+  assumedOn = nowOn; assumedKnown = true;
+  Preferences p; p.begin("titan", false);
+  p.putBool("pwron", nowOn); p.putBool("pwrk", true); p.end();
+}
+
+static void assumeBegin() {
+  Preferences p; p.begin("titan", true);
+  assumedOn    = p.getBool("pwron", false);
+  assumedKnown = p.getBool("pwrk",  false);
+  p.end();
+}
+
 static bool hidPowerPath() {
 #if HAS_HID
   return titanKeyChannelHid() || !everFrame;
@@ -453,9 +490,13 @@ static bool hidPowerPath() {
 
 void titanPowerOn() {
   if (hidPowerPath()) {
-    if (titanUsbPowerKnown() && titanUsbAwake()) { tlog("power on: already awake"); return; }
+    if (titanUsbPowerKnown() ? titanUsbAwake() : (assumedKnown && assumedOn)) {
+      tlog("power on: already on%s", titanUsbPowerKnown() ? "" : " (assumed)");
+      return;
+    }
     tlog("power on: HID power key");
     titanHid("power");
+    assumeAfterToggle(true);
     return;
   }
 #if USB_DEAD_IN_STANDBY
@@ -473,9 +514,13 @@ void titanPowerOn() {
 
 void titanPowerOff() {
   if (hidPowerPath()) {
-    if (titanUsbPowerKnown() && !titanUsbAwake()) { tlog("power off: already asleep"); return; }
+    if (titanUsbPowerKnown() ? !titanUsbAwake() : (assumedKnown && !assumedOn)) {
+      tlog("power off: already off%s", titanUsbPowerKnown() ? "" : " (assumed)");
+      return;
+    }
     tlog("power off: HID power key");
     titanHid("power");
+    assumeAfterToggle(false);
     return;
   }
   if (act != ACT_NONE) { tlog("busy: %s", titanBusyStr()); return; }
@@ -488,6 +533,7 @@ void titanPowerToggle() {
   if (hidPowerPath()) {
     tlog("power toggle: HID power key");
     titanHid("power");
+    assumeAfterToggle(!assumedOn);
     return;
   }
   if (pwr == PWR_AWAKE) titanPowerOff();
@@ -583,6 +629,7 @@ static void runPoll() {
 
 void titanBegin() {
   keyChannelBegin();
+  assumeBegin();
 #if (SERIAL_CHANNELS & CH_UART1)
   // Bias RX to the idle-high state. Left floating with no adapter attached it
   // picks up noise and delivers phantom bytes.
