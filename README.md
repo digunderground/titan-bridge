@@ -1,206 +1,325 @@
-# titan-bridge — XGIMI TITAN Noir control bridge
+# titan-bridge
 
-> **Alpha 0.0.1.** Working on one unit — an XGIMI TITAN Noir Max — and not yet
-> tried anywhere else. Both control channels work: **USB HID** from an ESP32-S3,
-> and **serial** through a USB-serial adapter the projector will actually bind
-> (**FTDI only** — CP2102 and CH340 are never bound, which cost a day to
-> establish). Expect menu-walking macros to be specific to one firmware build.
-> See `logs/TEST-LOG.md` for what was measured rather than assumed.
+Discrete control for an **XGIMI TITAN Noir** projector — real power on and off,
+direct input select, picture presets, volume, focus, and a macro engine that
+drives the on-screen menu for everything the published command set omits.
+
+Exposed three ways at once: a **web app** you can add to a phone's home screen,
+a **REST API** for Home Assistant, and **Roku ECP emulation** so a SofaBaton
+hub discovers it as a TV and drives it with a native remote layout.
+
+> ### Alpha 0.8
+>
+> Working, daily-usable, and verified on **one** unit — an XGIMI TITAN Noir Max.
+> Nothing here has been tried on another projector or another firmware build.
+>
+> Menu-walking macros are positional and tied to a specific projector firmware;
+> everything else is protocol-level and should travel further.
+>
+> [`logs/TEST-LOG.md`](logs/TEST-LOG.md) records what was **measured** rather
+> than assumed, including several things that turned out to contradict XGIMI's
+> own documentation.
+
+---
 
 ## What works
 
-| | |
-|---|---|
-| Discrete power on / off | ✅ HID usage `0x66`, verified in both directions including wake from standby |
-| Menu navigation | ✅ arrows, OK, Back, Menu |
-| Volume, focus | ✅ |
-| Home Assistant | ✅ REST API |
-| SofaBaton X2 | ✅ via Roku ECP emulation; macros appear as launchable apps |
-| Macro recorder + editor | ✅ records real key timing, saves as an editable script |
-| Serial command set (inputs, picture modes, brightness) | ✅ with an **FTDI** adapter |
-| **HDMI3 — the undocumented third input** | ✅ confirmed real; XGIMI's table omits it |
-| Discrete power **on** | ✅ serial `wake`, no toggle ambiguity |
-| Verified power **state** | ❌ nothing reports it — the temperature probe answers in standby too, so on/off track an assumption |
+| Capability | Status | Notes |
+|---|---|---|
+| Menu navigation | ✅ | arrows, OK, Back, Menu — on **either** channel |
+| Discrete power **on** | ✅ | serial `wake`, or HID `0x66` |
+| Power **off** | ✅ | serial power key + confirm, or HID `0x66` |
+| Direct input select | ✅ | HDMI1 / HDMI2 / **HDMI3** / USB — serial |
+| Picture modes | ✅ | Filmmaker, Movie, IMAX, Vivid, Performance, Sport, TV |
+| Brightness, blank, high-refresh | ✅ | serial |
+| Volume, mute, autofocus, manual focus | ✅ | |
+| Macro recorder + step editor | ✅ | records real key timing; saves an editable script |
+| Home Assistant | ✅ | REST, no MQTT, no custom component, no HACS |
+| SofaBaton X2 | ✅ | Roku ECP; saved macros appear as launchable apps |
+| Infrared receiver | ✅ | optional TSOP38238, so a dead router doesn't cost you the remote |
+| **Reading power state** | ❌ | nothing on this projector reports it — see below |
 
+### The one real limitation
 
-An ESP32-S3 that gives an XGIMI TITAN Noir Max the discrete control it does not
-ship with: real power on and off, direct input select, picture presets, and a
-macro engine that drives the on-screen menu for the features XGIMI's serial set
-does not expose.
+**The projector never reports whether it is on.** Its serial daemon answers the
+temperature probe *identically in standby*, and its USB bus never suspends — so
+neither channel offers a liveness signal. The bridge therefore **tracks what it
+last did** and labels the result `(assumed)`.
 
-The Noir has no IR receiver, no PJLink, no smart OS and therefore no ADB. What
-XGIMI documents is **RS232 over a USB adapter, at 115200 8N1**, once you turn on
-Settings → General → Serial Port Control.
-
-> **Status, 2026-09-05. The bridge controls the projector — over USB HID, not
-> serial.** An ESP32-S3-DevKitC-1 with its native USB port in a projector USB
-> port opens the OSD and moves the selection, commanded over Wi-Fi from another
-> room. `keychan hid` routes `anchor` and every `k:` macro step down that
-> channel, so the counted menu paths work unchanged.
->
-> Serial does not work on this unit, in either form: a CP2102 adapter is never
-> bound, and the S3's native CDC endpoint is never opened. Whatever Serial Port
-> Control does here, it does not bind a USB device. Adapters with other driver
-> chips are still worth trying — see
-> [`docs/11-adapter-driver-test.md`](docs/11-adapter-driver-test.md) — but they
-> are now an optimisation, not the critical path.
-> Evidence in [`logs/TEST-LOG.md`](logs/TEST-LOG.md).
+That is accurate until someone uses the physical remote, which nothing can
+observe. One tap in **Settings → Power state** resyncs it without sending
+anything to the projector.
 
 ---
 
-## Start here
+## Known-good hardware
 
-| If you are… | Go to |
+Both of these are the exact parts this was built and verified against.
+
+| Part | Why this one |
 |---|---|
-| waiting for parts | [`docs/01-preflight.md`](docs/01-preflight.md) |
-| impatient, with any ESP32 board and no dongle | [`docs/09-onboard-bridge-path.md`](docs/09-onboard-bridge-path.md) |
-| holding the parts, it's Saturday morning | [`docs/02-day1-test-card.md`](docs/02-day1-test-card.md) |
-| wiring | [`docs/03-wiring.md`](docs/03-wiring.md) · [`hardware/wiring.svg`](hardware/wiring.svg) |
-| flashing | [`docs/04-flashing.md`](docs/04-flashing.md) |
-| mapping menus on Sunday | [`docs/05-menu-mapping-worksheet.md`](docs/05-menu-mapping-worksheet.md) |
-| holding a USB keyboard and impatient | [`docs/10-hid-key-probe.md`](docs/10-hid-key-probe.md) |
-| looking up a command | [`docs/06-command-reference.md`](docs/06-command-reference.md) |
-| testing which USB-serial adapter binds | [`docs/11-adapter-driver-test.md`](docs/11-adapter-driver-test.md) |
-| stuck | [`docs/07-troubleshooting.md`](docs/07-troubleshooting.md) |
-| wiring up the hub or Home Assistant | [`docs/08-integration.md`](docs/08-integration.md) |
-| reading the original reasoning | [`plan/titan_noir_bridge_plan.md`](plan/titan_noir_bridge_plan.md) |
+| **[ESP32-S3-DevKitC-1 (N16R8)](https://a.co/d/0eFIGSre)** | Two USB-C ports. The native port presents USB HID to the projector while the UART port keeps a console and flashing — a single-port board forces you to unplug the projector on every reflash. |
+| **[DSD TECH SH-U09G — FTDI FT232RL USB-to-TTL](https://a.co/d/05u0XP1Y)** | The **only** adapter class this projector binds. 3.3 V TTL, so it wires straight to the ESP32 with no level shifting. |
 
-## The five-minute version
+### Adapters that do NOT work
+
+This cost a day to establish, so it is worth stating plainly:
+
+| Chip | Driver | Binds? |
+|---|---|---|
+| **FT232RL** | `ftdi_sio` | ✅ **yes** |
+| CP2102 | `cp210x` | ❌ never |
+| CH340G | `ch341` | ❌ never |
+
+In every failing case the wiring was proven first on a bench — laptop standing
+in for the projector, frames out and replies in — so the failures were
+unambiguously the projector's kernel driver support, not the rig. If you buy a
+"USB to TTL" cable, **check the chip**.
+
+### Optional
+
+- **TSOP38238** IR receiver on GPIO15, for a physical remote fallback
+- A **5 V supply**, if you later drop the HID channel (see *Simplifying* below)
+
+---
+
+## Wiring
+
+Two independent channels. You can run either alone, or both at once — which is
+what the diagram shows, and what is recommended while you are still finding out
+what your unit does.
+
+![dual path](hardware/wiring-dualpath.svg)
+
+### Channel A — USB HID (no extra parts)
+
+| From | To |
+|---|---|
+| ESP32-S3 **native USB-C** | projector **USB 3.0** — carries HID *and* powers the board |
+| ESP32-S3 **UART USB-C** | your laptop, for flashing and console (optional once Wi-Fi is up) |
+
+### Channel B — serial, via the FTDI cable
+
+| Cable wire | Label | ESP32-S3 |
+|---|---|---|
+| **blue** | `TXD` | **GPIO18** |
+| **white** | `RXD` | **GPIO17** |
+| **black** | `GND` | **GND** (any — they are one net) |
+| yellow | `CTS` | *not connected* |
+| green | `RTS` | *not connected* |
+| red | `VCC` | *not connected* — it is 5 V |
+
+The cable's **USB-A** goes into the projector's **USB 2.0** port.
+
+**TX and RX cross**: the adapter's transmit goes to the ESP32's receive.
+
+> **Check the logic level before wiring.** The SH-U09G is 3.3 V TTL, which is
+> safe. If you use a different cable, measure **TXD to GND** — an idle TX line
+> sits high, so you want ~3.3 V. GPIO18 is **not 5 V tolerant**. If it reads
+> 5 V, fit a divider on that line only: 1 kΩ from TXD to GPIO18, 2 kΩ from
+> GPIO18 to GND. Do **not** fit that divider speculatively — it drops a genuine
+> 3.3 V signal to ~2.2 V, below the ESP32-S3's logic-high threshold.
+
+### On the projector
+
+**Settings → General → Serial Port Control = ON.** Leave `ID Group` at `A`,
+`ID Number` at `0`, and both Response toggles on — that is the most permissive
+configuration, and the bridge implements no addressing to match against.
+
+---
+
+## Install
+
+### 1. Toolchain
 
 ```bash
-# 1. flash the diagnostic sketch
-tools/flash.sh p1
+# arduino-cli, macOS arm64 — adjust the URL for your platform
+curl -fsSL -o acli.tgz https://downloads.arduino.cc/arduino-cli/arduino-cli_latest_macOS_ARM64.tar.gz
+tar xzf acli.tgz arduino-cli && mkdir -p ~/.local/bin && mv arduino-cli ~/.local/bin/
 
-# 2. in the monitor (115200, line ending = Newline)
-k down       # does the menu cursor move?   -> USB enumeration works
-temp         # do bytes come back?          -> serial is bound, you're done
-poll 5       # leave running, then put the projector into standby (Test 5)
-
-# 3. once you know which channel won
-tools/flash.sh p2
+URL=https://espressif.github.io/arduino-esp32/package_esp32_index.json
+~/.local/bin/arduino-cli core update-index --additional-urls "$URL"
+~/.local/bin/arduino-cli core install esp32:esp32 --additional-urls "$URL"
 ```
 
-If `temp` returns bytes on Saturday, the hard part is over.
+Verified against **esp32 core 3.3.11**. No external libraries — everything used
+ships with arduino-esp32.
+
+### 2. Build and flash
+
+```bash
+cd firmware
+~/.local/bin/arduino-cli compile \
+  --fqbn "esp32:esp32:esp32s3:USBMode=default,CDCOnBoot=default,FlashSize=16M,PartitionScheme=min_spiffs" \
+  --build-property "compiler.cpp.extra_flags=-DBOARD=1" \
+  --upload -p /dev/cu.usbmodemXXXX titan_bridge_p2
+```
+
+**`USBMode=default` is not optional.** It selects USB-OTG/TinyUSB; under the
+`hwcdc` default the HID interface never enumerates and the HID channel simply
+does not exist.
+
+Find the port with `arduino-cli board list`. On this board **both** USB ports
+enumerate as `usbmodem*` — the UART one is a separate bridge chip ("USB Single
+Serial" / CH343), the other is Espressif silicon. Flash through the **UART**
+one.
+
+### 3. Wi-Fi
+
+No credentials are compiled in. On first boot the bridge raises an access point
+**`TitanBridge-XXXX`** (password `titanbridge`). Join it, open
+<http://192.168.4.1/>, enter your network.
+
+Or, over the UART console at 115200:
+
+```
+wifi <ssid> <password>
+```
+
+It then lives at **http://titan-bridge.local/** and accepts OTA updates:
+
+```bash
+python3 ~/Library/Arduino15/packages/esp32/hardware/esp32/3.3.11/tools/espota.py \
+  -i <bridge-ip> -p 3232 -f build/titan_bridge_p2.ino.bin -r
+```
+
+> **Pin a DHCP reservation.** SofaBaton stores the device by IP, and mDNS adds a
+> resolution step that occasionally times out.
+
+### 4. Add to your phone
+
+Open the bridge in Safari → Share → **Add to Home Screen**. It launches
+chromeless with its own icon.
+
+### Other boards
+
+`BOARD=` selects a profile in `config.h`:
+
+| Board | `BOARD` | Native USB | Default channel |
+|---|---|---|---|
+| ESP32-S3-DevKitC-1 | `1` | yes | HID + serial |
+| Heltec WiFi LoRa 32 V3/V4 | `2` | not on the connector | onboard bridge chip |
+| Classic ESP32 (WROOM-32) | `3` | none | onboard bridge chip |
+
+A board with no native USB has HID masked out rather than failing to build.
+See [`docs/09-onboard-bridge-path.md`](docs/09-onboard-bridge-path.md) for
+running with **no adapter at all**, using a dev board's own USB-serial chip.
 
 ---
 
-## What's here
+## Using it
+
+### The app
+
+Three tabs. **Titan Bridge** — power, D-pad, volume and focus rockers, and a
+segmented strip of every direct action. **Macros** — recorder, grouped list,
+and a chip-based step editor. **Settings** — control channel, power behaviour,
+the ECP routing table, live status and log.
+
+### Control channel
+
+Navigation can travel over **serial** or **USB HID**, switchable in Settings and
+remembered across reboots. Serial is only selectable once a valid frame has
+actually arrived, because selecting it with no adapter attached would leave
+every key silently doing nothing.
+
+Macro steps `k:` follow the active channel; `h:` and `s:` force one.
+
+### Macros
 
 ```
-firmware/
-  titan_bridge_p1/    Day 1 diagnostic. USB CDC + HID keyboard + IR transmitter,
-                      a console, and USB bus-event logging so Test 5 has real
-                      evidence rather than a guess.
-  titan_bridge_p2/    Production bridge. Dual serial channel, macro engine,
-                      power state machine, Roku ECP emulation, IR receiver,
-                      web UI, REST API, Wi-Fi provisioning, OTA.
-docs/                 The runbook, in the order you need it.
-hardware/             Wiring diagram, SVG and PNG.
-tools/
-  titan_serial.py     Drive the projector from a laptop with only a USB-TTL
-                      adapter — no ESP32 in the way. The fastest way to remove
-                      a variable when something doesn't work.
-  ecp_probe.py        See the bridge the way a SofaBaton hub sees it.
-  flash.sh            build / upload / monitor, without remembering the FQBN.
-homeassistant/        Drop-in package and dashboard card. No MQTT, no HACS.
-logs/                 Test log and menu-mapping templates. Fill these in.
-plan/                 The original build plan and its reasoning.
+anchor; k:down*3; d400; k:ok; k:back*3
 ```
 
-## Firmware at a glance
+| Token | Meaning |
+|---|---|
+| `k:<key>` | key on the **active** channel |
+| `h:<key>` / `s:<cmd>` | force HID / force serial |
+| `m:<name>` | run another macro |
+| `r:<hex>` | raw frame |
+| `p:on` `p:off` | power |
+| `d<ms>` | wait |
+| `anchor` | back ×3 then settings — forces a known menu root |
+| `tok*<n>` | repeat |
 
-Both sketches are **pure arduino-esp32 with no external libraries**, so there
-is nothing to install before flashing. Verified to compile warning-free on
-arduino-esp32 **2.0.17** and **3.3.11**, and across every configuration
-permutation in `config.h`.
+**Record instead of counting.** Press Record, drive the projector, press Stop.
+The recorder captures each key *and the real gap between presses*, so the
+delays are the ones the OSD actually kept up with rather than a guessed
+constant.
 
-| | p1 | p2 |
-|---|---|---|
-| Purpose | answer the Day 1 questions | run the theatre |
-| Flash used | 29% | 54% (Minimal SPIFFS) |
-| Serial over native USB CDC | ✅ | ✅ |
-| Serial over UART1 → USB-TTL | ✅ (one `#define`) | ✅ (simultaneously) |
-| USB HID keyboard | ✅ | ✅ |
-| IR transmit (Test 6 sweep) | ✅ | — |
-| IR receive | — | ✅ |
-| USB bus-event logging | ✅ | — |
-| Parameter sweeping | ✅ | ✅ |
-| Macro engine | — | ✅ |
-| Power state machine | — | ✅ |
-| Roku ECP + SSDP | — | ✅ |
-| Web UI + REST API | — | ✅ |
-| Wi-Fi provisioning + OTA | — | ✅ |
+### Home Assistant
 
-### The three ideas worth knowing
+Copy [`homeassistant/titan_noir.yaml`](homeassistant/titan_noir.yaml) into
+`config/packages/`, set the host, restart. Gives you a power switch, input and
+picture-mode selects, temperature and diagnostic sensors, and buttons. The
+Lovelace card is in the same directory.
 
-**One command path.** A button on the web page, a Roku keypress from the hub,
-an IR code and a Home Assistant service call all compile down to the same macro
-script and run through the same engine. There is one place to fix things.
+### SofaBaton X2
 
-**Liveness by temperature probe.** The projector's only feedback channel is its
-temperature status. The bridge polls it every 10 seconds: a reply means awake,
-three silences mean asleep. That is what makes power on and off *idempotent* —
-they mean what they say regardless of the state you started in, which is more
-than the Bluetooth remote manages.
+Hub app → add device → Wi-Fi → **Roku** → scan. It appears as **Titan Bridge**.
 
-**Anchored macros.** The serial set has no 3D, lens memory, iris or keystone.
-Instruction `0x07` drives the OSD blind, so macros open by forcing a known
-state — `back, back, back, settings` — then count from there. Without the
-anchor, one desynced press sends the rest of the sequence somewhere random.
+The app discovers by *listening for announcements*, not by its own search
+reaching the device — so if it cannot find the bridge, hit `GET /api/announce`
+and rescan. Details and the full key map in
+[`docs/08-integration.md`](docs/08-integration.md).
 
 ---
 
-## Command reference, in brief
+## Simplifying later
 
-Frame: `2A 2A <len> <instr> <params…> <checksum>`, where `len` is 1 plus the
-parameter count and the checksum is everything after the header, mod 256.
+Once you are confident serial covers everything you use, the HID channel — and
+with it one projector USB port — can be dropped:
+
+- FTDI cable → projector USB, ESP32 → **its own 5 V supply**
+- The ESP32's native USB port comes free
+
+The catch: the board is currently powered *by* the projector's USB through that
+very port, so removing it means providing power. Keeping both costs nothing but
+a USB port, and HID carried the entire project for two days while serial looked
+impossible.
+
+---
+
+## Repo layout
 
 ```
-hdmi1 hdmi2 hdmi3? usbsrc          source select
-vivid movie imax perf tvmode sport filmmaker
-b1 … b10                           brightness
-power source up down left right ok back setting home
-volup voldn autofocus manfocus mute
-wake                               standby wake, "wakeup" in ASCII
-blank unblank                      screen off / on
-hrroff hrrbasic hrrmax             high refresh rate
-temp                               temperature status — the only feedback
+firmware/titan_bridge_p2/   production firmware — web app, macro engine,
+                            power state machine, Roku ECP, IR, OTA
+firmware/titan_bridge_p1/   Day 1 diagnostic sketch with a serial console
+docs/                       the runbook, in the order you need it
+hardware/                   wiring diagrams
+homeassistant/              drop-in package and Lovelace card
+tools/    titan_serial.py     drive the projector from a laptop, no ESP32
+          fake_projector.py   pretend to BE the projector, so the bridge can be
+                              tested at a desk with nothing else plugged in
+          ecp_probe.py        see the bridge the way a hub sees it
+logs/TEST-LOG.md            what was measured, including the surprises
+plan/                       the original build plan and its reasoning
 ```
 
-Full table with verified frames, and the two places XGIMI's own document
-contradicts itself, in [`docs/06-command-reference.md`](docs/06-command-reference.md).
+---
 
-## Known unknowns
+## Things that turned out not to be true
 
-These are the things the hardware has to answer. They are listed here so that
-finding one of them out is progress rather than a surprise.
+Recorded because each one cost real time, and because the documentation still
+says otherwise.
 
-1. ~~**Does CDC bind?**~~ **Answered: no — and neither does a CP2102.** The
-   projector never opens a port for either. It is not that the daemon binds and
-   ignores us; nothing binds at all, evidenced by the absence of any DTR
-   assertion across hundreds of seconds. The open question is now narrower:
-   *which USB-serial driver, if any, does its kernel carry?* `ftdi_sio`,
-   `ch341` and `pl2303` are all untested.
-2. ~~**Do the USB ports stay powered in standby?**~~ **Answered: yes.** The
-   bridge stayed up, on Wi-Fi, powered by nothing but the projector's USB, with
-   the projector switched off. So the bridge survives to wake it — if something
-   it can send turns out to wake it. Whether an HID keypress does is the next
-   cheap experiment.
-3. **Does HDMI3 exist as parameter `03`?** Still open, and unanswerable until
-   some serial channel works. The document lists two HDMI inputs
-   on a three-HDMI projector, which smells like a copy from the original TITAN.
-4. **Is high-refresh "extreme" parameter `01` or `02`?** The document prints
-   `01` and gives a checksum that only works for `02`. The firmware follows the
-   checksum.
-5. **Does SofaBaton's Roku profile surface the TV-only keys?** The bridge
-   presents `is-tv=true` specifically to find out.
-6. **Does an HID keypress wake it from standby?** The ports stay live and a
-   keyboard drives the OSD, so this is plausible — and if it holds there is
-   discrete power-on with no smart plug and no serial at all.
+- **XGIMI's command table omits HDMI3.** The third input is real and selectable
+  as parameter `0x03`. The table appears to be copied from the two-input
+  original TITAN.
+- **The projector acknowledges every command** with `instruction | 0x80` and the
+  parameter echoed — undocumented. It confirms *receipt only*: a sweep ACKed
+  parameters that cannot possibly exist, including `0xFE`.
+- **The temperature probe is not a power indicator.** It answers identically in
+  standby, which is why power state is assumed rather than measured.
+- **Commands are honoured in standby.** You can pre-select an input and then
+  wake, and the projector comes up on it.
+- **`0x07` parameter `0x06` opens a calibration test pattern** — a service
+  screen with no button on the remote.
+- **Only FTDI binds.** CP2102 and CH340 are never bound by this projector.
 
-## After a projector firmware update
+---
 
-Re-pull XGIMI's help-centre article and diff the command-table image; re-run
-Test 5; re-verify one macro per menu branch. New instruction bytes are the
-cheapest capability this project will ever gain, and lens memory is promised in
-a future OTA.
+## Licence
+
+None yet — ask.
