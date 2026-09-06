@@ -94,7 +94,7 @@ const char *titanBusyStr();                 // "" when idle
 // then verifies with a temperature probe, so "on" and "off" mean what they say
 // regardless of the state you started in.
 void titanPowerOn();
-void titanPowerOff();
+void titanPowerOff(bool force = false);
 void titanPowerToggle();
 
 // Last thing the projector told us, for the UI.

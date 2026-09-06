@@ -309,7 +309,21 @@ bool titanSendRawHex(const char *hex) {
   }
   if (!n) return false;
   linkWrite(buf, n);
-  tlog("TX raw %u bytes", n);
+
+  // Log the bytes, not just the count. A sweep used to leave 64 identical
+  // "TX raw 6 bytes" lines with no record of which parameter went out.
+  char hx[52]; int q = 0;
+  for (uint8_t k = 0; k < n && q < (int)sizeof(hx) - 3; k++)
+    q += snprintf(hx + q, sizeof(hx) - q, "%02X ", buf[k]);
+  tlog("TX raw %s", hx);
+
+  // A power key sent by this route is still a power key. Without this, a raw
+  // send silently desynced the assumed state — which is exactly the failure
+  // the off-guard then turns into "the remote does nothing".
+  if (n >= 6 && buf[0] == 0x2A && buf[1] == 0x2A) {
+    if      (buf[3] == 0x09)                    assumeAfterToggle(true);
+    else if (buf[3] == 0x07 && buf[4] == 0x00)  assumeAfterToggle(!assumedOn);
+  }
   return true;
 }
 
@@ -704,10 +718,28 @@ void titanPowerOn() {
   tlog("power on: starting");
 }
 
-void titanPowerOff() {
+void titanPowerOff(bool force) {
   if (titanUsbPowerKnown() && !titanUsbAwake()) { tlog("power off: already off"); return; }
-  if (!powerObey && assumedKnown && !assumedOn) {
-    tlog("power off: skipped, believed already off — resync in Settings if wrong");
+
+  // There is NO discrete off. Off is a toggle on both channels, so an "off"
+  // sent to an already-off projector switches it ON. That is exactly what made
+  // the hub's "Power off" and "Turn off" buttons appear to wake the unit —
+  // both send the same ECP key, and both landed here while it was in standby.
+  //
+  // Probed 2026-09-06 looking for a discrete off to pair with wake: instruction
+  // 0x09 is string-keyed ("wakeup"), so "sleep", "standby", "poweroff" and
+  // "shutdown" were each sent to an awake projector. All four ACKed with the
+  // payload echoed back verbatim — identically to the working "wakeup" — and
+  // none of them did anything. No discrete off exists.
+  //
+  // Hence the asymmetry with titanPowerOn(): on is idempotent so it is never
+  // guarded; off is a toggle so it always is, in BOTH power modes. Obey mode
+  // used to skip this check, which is what let a stale belief turn the
+  // projector on. The worst case for a guarded off is "nothing happened"; for
+  // an unguarded one it is "the projector switched on and stayed on".
+  if (!force && assumedKnown && !assumedOn) {
+    tlog("power off: skipped, believed already off — press On then Off "
+         "(on is a safe no-op), or resync in Settings");
     return;
   }
   if (powerDebounced()) return;
@@ -775,37 +807,43 @@ static void runAction() {
     return;
   }
 
-  // ACT_OFF — the power key is not discrete; it raises a confirmation dialog.
+  // ACT_OFF — the power key is not discrete. It raises a 15 s power-off
+  // countdown, and that countdown COMPLETES into a shutdown on its own; OK
+  // merely short-circuits it.
+  //
+  // We used to press OK 900 ms after the power key. Measured 2026-09-06: the
+  // dialog does not reliably exist that early, so the OK landed on nothing,
+  // the countdown then ran unattended, and whether the projector shut down was
+  // a race we did not know we were running. Worse, the bridge recorded "off"
+  // either way, so a lost race desynced the assumed state and — once off was
+  // guarded — silently suppressed every later attempt.
+  //
+  // Waiting the countdown out is slower and completely deterministic. 15 s is
+  // not worth a race condition.
   switch (actStep) {
     case 0:
       if (pwr == PWR_ASLEEP) { tlog("power off: confirmed asleep"); act = ACT_NONE; return; }
       actTries++;
       titanSendNamed("power");
-      actAt = millis() + POWEROFF_CONFIRM_MS; actStep = 1;
+      tlog("power off: countdown started, ~%lu s to shutdown",
+           (unsigned long)(POWEROFF_COUNTDOWN_MS / 1000));
+      actAt = millis() + POWEROFF_COUNTDOWN_MS; actStep = 1;
       break;
     case 1:
-      titanSendNamed("ok");                 // accept the confirmation dialog
-      actAt = millis() + POWEROFF_SETTLE_MS; actStep = 2;
-      break;
-    case 2:
-      sendProbe();
-      actAt = millis() + POLL_REPLY_TIMEOUT_MS; actStep = 3;
-      break;
-    case 3:
 #if TEMP_PROBE_INDICATES_POWER
       if (!probeAnswered()) { setPower(PWR_ASLEEP); pollMisses = POLL_MISSES_TO_SLEEP;
                               tlog("power off: OK"); act = ACT_NONE; }
       else if (actTries < 2) { tlog("power off: still awake, retrying");
                                actStep = 0; actAt = millis(); }
-      else { tlog("power off: FAILED — the confirmation dialog may need a "
-                  "different key or delay; tune POWEROFF_CONFIRM_MS");
+      else { tlog("power off: FAILED — the countdown did not complete; "
+                  "tune POWEROFF_COUNTDOWN_MS");
              setPower(PWR_AWAKE); act = ACT_NONE; }
 #else
       // This retry was actively harmful. probeAnswered() is always true here —
       // the projector answers the temperature probe in standby — so a
       // successful power-off looked like "still awake", the sequence pressed
       // power a second time, and the projector came straight back on.
-      tlog("power off: sent (cannot be verified on this projector)");
+      tlog("power off: countdown elapsed (cannot be verified on this projector)");
       assumeAfterToggle(false);
       act = ACT_NONE;
 #endif

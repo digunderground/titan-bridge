@@ -575,3 +575,67 @@ Also worth recording: that OSD list — Standard, Movie, Sports, ISF Day, ISF
 Night — shares only "Movie" with XGIMI's serial table, and neither Performance
 nor Filmmaker appears in it, though both work over serial. The serial parameter
 set and the on-screen menu are two different worlds.
+
+## 2026-09-06 — the hub's "power off" was turning the projector ON
+
+Reported: pressing **Turn off** or **Power off** on the SofaBaton while the
+projector was already off switched it **on**.
+
+### Both labels are the same command
+
+The hub sends `/keypress/PowerOff` for both. There is no "turn off" vs "power
+off" distinction — a question that had been open since 2026-09-05. Confirmed
+from the ECP log: three presses, three identical `PowerOff` requests from
+10.0.0.118.
+
+### Root cause 1 — off is a toggle and was unguarded
+
+`titanPowerOff()` skipped its believed-state check whenever `powerObey` was
+set, and obey is the mode in use. So an off sent to an off projector fired the
+power key, which is a **toggle**, and turned it on.
+
+Fixed by making the guard unconditional for off while leaving on unguarded.
+The asymmetry is deliberate: `wake` is idempotent (verified — sending it to an
+awake projector does nothing), so guarding on only ever produces "PowerOn does
+nothing". Off is a toggle, so the worst case for guarding it is "nothing
+happened" versus "the projector switched on and stayed on".
+
+### Root cause 2 — the off sequence was racing a dialog it could not see
+
+The power key raises a **15-second power-off countdown**. The bridge pressed
+`OK` 900 ms later (`POWEROFF_CONFIRM_MS`) to short-circuit it.
+
+Measured: the dialog does not reliably exist at 900 ms. When it did not, the
+`OK` landed on nothing — and the countdown then ran unattended.
+
+**The countdown completes into a shutdown by itself.** So the outcome depended
+on a race nobody knew was running, and the bridge recorded "off" either way.
+Once off was guarded (fix 1), a lost race desynced the assumed state and
+silently suppressed every subsequent press — the user had to open Settings and
+declare "it's on" before the remote would work again. Fix 1 made fix 2's
+absence much worse; they had to ship together.
+
+Power-off is now a single press followed by waiting the countdown out. Slower
+by ~15 s, and free of the race. Operator's call, and the right one: *"15
+seconds till off is never an issue."*
+
+### Root cause 3 — `/api/raw` desynced the assumed state
+
+Raw sends bypassed `titanSendNamed()`, so a power key sent for diagnostics did
+not update belief. This bit during the investigation itself: the app read
+"on (assumed)" with the projector off. `/api/raw` now updates the assumed state
+for the power key and `wake`, and logs the actual bytes rather than
+`TX raw 6 bytes` — which also closes a blind spot that would have made the
+planned command sweeps unreadable.
+
+### No discrete off exists
+
+`0x09` is string-keyed (`"wakeup"`), so `sleep`, `standby`, `poweroff` and
+`shutdown` were each sent to an awake projector. All four ACKed with the
+payload echoed verbatim, identical in shape to the working `wakeup`, and none
+did anything. See `docs/06-command-reference.md`.
+
+This is the **fifth** independent demonstration that an ACK proves receipt and
+nothing else — and it also refutes, for this instruction, the parameter-echo
+idea that the mapping plan lists as its most promising camera-free experiment:
+one working command and four dead ones are byte-identical in the reply.

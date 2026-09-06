@@ -341,8 +341,12 @@ static void uiRoutes() {
       okJson(ui, statusJson());
       return;
     }
+    // force=1 sends the off toggle even when the bridge believes the projector
+    // is already off. For "I can see it is on, you are wrong" — never for the
+    // hub, whose PowerOff must stay guarded.
+    const bool force = (argOr(ui, "force", "0") == "1");
     if      (st == "on")  titanPowerOn();
-    else if (st == "off") titanPowerOff();
+    else if (st == "off") titanPowerOff(force);
     else                  titanPowerToggle();
     okText(ui, "ok");
   });

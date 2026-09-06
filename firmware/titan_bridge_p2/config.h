@@ -149,8 +149,10 @@
 
 #define WAKE_ATTEMPTS              3    // 'wakeup' frames before giving up
 #define WAKE_SETTLE_MS         4000UL   // wait after wake before re-testing
-#define POWEROFF_CONFIRM_MS     900UL   // power key -> confirmation dialog -> OK
-#define POWEROFF_SETTLE_MS     6000UL
+// The power key raises a 15 s power-off COUNTDOWN, and that countdown
+// completes into a shutdown by itself — OK only short-circuits it. Measured
+// 2026-09-06. We wait it out rather than racing to confirm; see titan.cpp.
+#define POWEROFF_COUNTDOWN_MS 16000UL   // 15 s dialog + margin
 
 // The HID power key is a toggle, so two presses in quick succession would undo
 // each other. One intent, one toggle.

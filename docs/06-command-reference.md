@@ -187,9 +187,20 @@ OSD blind. See `docs/05-menu-mapping-worksheet.md`.
 | Manual focus | 14 | `2A2A 02 07 14 1D` | `manfocus` |
 | Mute | 15 | `2A2A 02 07 15 1E` | `mute` |
 
-The **power key is not discrete** — it raises a confirmation dialog. The
-bridge's power-off is therefore a two-step macro (power → delay → OK) with a
-verification probe afterwards.
+The **power key is a toggle, not a discrete off.** Measured 2026-09-06: it
+raises a **15-second power-off countdown**, and that countdown **completes into
+a shutdown on its own**. `OK` only short-circuits it.
+
+The bridge used to press `OK` 900 ms after the power key. The dialog does not
+reliably exist that early, so the `OK` landed on nothing and whether the
+projector shut down became a race — and the bridge recorded "off" either way,
+so a lost race desynced the assumed state. Power-off is now a single press
+followed by waiting the countdown out: slower, and deterministic.
+
+Because the key is a toggle, sending it to an **already-off** projector turns it
+**on**. That is why a hub's "Power off" button could wake the unit. The bridge
+now guards off in both power modes while never guarding on — `wake` is
+idempotent, so guarding it only creates a "PowerOn does nothing" failure.
 
 There is **no Menu key** here. The USB HID keyboard's Application/Menu key
 (usage `0x65`) has no serial equivalent, which is the whole reason the HID
@@ -203,8 +214,33 @@ channel stays in the final design.
 
 Conspicuously not a simulated key press. An ASCII payload on its own
 instruction suggests a separate always-listening path in the projector's
-firmware — which is exactly what you would want a wake command to be. Whether
-it survives standby depends on Test 5.
+firmware — which is exactly what you would want a wake command to be.
+
+**`wake` is idempotent.** Sent to a projector that is already on, it does
+nothing at all (measured 2026-09-06). This is what makes it safe to send
+unconditionally, and it is why the on-path is never guarded.
+
+### There is no discrete off — probed and ruled out
+
+Because `0x09` is *string-keyed*, a symmetric off seemed plausible. Each of
+these was sent to an awake projector:
+
+| word | frame | result |
+|---|---|---|
+| `sleep`    | `2A2A 06 09 73 6C 65 65 70 28`          | ACK, no effect |
+| `standby`  | `2A2A 08 09 73 74 61 6E 64 62 79 06`    | ACK, no effect |
+| `poweroff` | `2A2A 09 09 70 6F 77 65 72 6F 66 66 7A` | ACK, no effect |
+| `shutdown` | `2A2A 09 09 73 68 75 74 64 6F 77 6E 8E` | ACK, no effect |
+
+All four were acknowledged with the **payload echoed back verbatim** —
+byte-for-byte the same ACK shape as the working `wakeup`. So for this
+instruction the echo carries no signal whatsoever: a command that works and
+four that do nothing are indistinguishable in the reply.
+
+That matters beyond power. Echo inspection looked like the most promising way
+to enumerate real commands without a camera (the UDS `requestOutOfRange`
+trick). On `0x09` it does not work. Anything built on it must be validated
+against a known-good/known-dead pair first.
 
 ## Screen blank — instruction 0x0D
 
