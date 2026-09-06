@@ -194,6 +194,7 @@ static char     lastRxHex[52] = "-";
 
 static PowerState pwr = PWR_UNKNOWN;
 static bool       assumedOn = false, assumedKnown = false;
+static void       assumeAfterToggle(bool nowOn);   // defined with the power section
 static uint8_t    pollMisses = 0;
 
 uint32_t    titanTxFrames()  { return txFrames; }
@@ -279,6 +280,12 @@ bool titanSendNamed(const char *name) {
   if (!c) return false;
   titanSendCmd(c->instr, c->p, c->plen);
   recCapture((String("s:") + name).c_str());
+
+  // Keep the assumed power state honest no matter which door the command came
+  // through. Sending "wake" via /api/cmd bypasses the power state machine, so
+  // the projector woke while the bridge went on believing it was off — the
+  // same hole /api/hidraw opened when it fired the HID power key directly.
+  if (c->instr == 0x09) assumeAfterToggle(true);          // wake
   return true;
 }
 
@@ -379,6 +386,10 @@ bool titanHidRaw(uint8_t usage) {
   delay(30);
   KB.releaseRaw(usage);
   tlog("HID raw 0x%02X", usage);
+  // 0x66 is the power toggle. Fired straight through this probe endpoint it
+  // used to change the projector without the bridge noticing, which is exactly
+  // how the assumed state drifted far enough to make the buttons look reversed.
+  if (usage == 0x66) assumeAfterToggle(!assumedOn);
   return true;
 #else
   (void)usage;
