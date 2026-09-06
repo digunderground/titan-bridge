@@ -590,8 +590,12 @@ async function checkUpdate(){
   $('fwlink').style.display='none';
   let r;
   try{
-    r=await (await fetch('https://api.github.com/repos/'+(s.repo||'digunderground/titan-bridge')
-      +'/releases/latest',{headers:{'Accept':'application/vnd.github+json'}})).json();
+    // /releases/latest EXCLUDES pre-releases and 404s when every release is
+    // one — which is exactly this project's situation. List instead and take
+    // the newest, so an alpha tag still registers as an update.
+    const rl=await (await fetch('https://api.github.com/repos/'+(s.repo||'digunderground/titan-bridge')
+      +'/releases?per_page=1',{headers:{'Accept':'application/vnd.github+json'}})).json();
+    r=Array.isArray(rl)?rl[0]:null;
   }catch(e){
     $('fwlatest').textContent='could not reach GitHub';
     $('fwnote').textContent='The phone needs internet access for this; the bridge itself never does.';
