@@ -623,15 +623,17 @@ static bool hidPowerPath() {
 }
 
 void titanPowerOn() {
+  // These guards are about intent, not transport, so they apply whichever
+  // channel ends up carrying the command.
+  if (titanUsbPowerKnown() && titanUsbAwake()) { tlog("power on: already on"); return; }
+  if (!powerObey && assumedKnown && assumedOn) {
+    tlog("power on: skipped, believed already on — resync in Settings if wrong");
+    return;
+  }
+  if (powerDebounced()) return;
+  lastPowerAt = millis();
+
   if (hidPowerPath()) {
-    // A measured state is worth obeying; an assumed one is not.
-    if (titanUsbPowerKnown() && titanUsbAwake()) { tlog("power on: already on"); return; }
-    if (!powerObey && assumedKnown && assumedOn) {
-      tlog("power on: skipped, believed already on — resync in Settings if wrong");
-      return;
-    }
-    if (powerDebounced()) return;
-    lastPowerAt = millis();
     tlog("power on: HID power key");
     titanHid("power");
     assumeAfterToggle(true);
@@ -651,14 +653,15 @@ void titanPowerOn() {
 }
 
 void titanPowerOff() {
+  if (titanUsbPowerKnown() && !titanUsbAwake()) { tlog("power off: already off"); return; }
+  if (!powerObey && assumedKnown && !assumedOn) {
+    tlog("power off: skipped, believed already off — resync in Settings if wrong");
+    return;
+  }
+  if (powerDebounced()) return;
+  lastPowerAt = millis();
+
   if (hidPowerPath()) {
-    if (titanUsbPowerKnown() && !titanUsbAwake()) { tlog("power off: already off"); return; }
-    if (!powerObey && assumedKnown && !assumedOn) {
-      tlog("power off: skipped, believed already off — resync in Settings if wrong");
-      return;
-    }
-    if (powerDebounced()) return;
-    lastPowerAt = millis();
     tlog("power off: HID power key");
     titanHid("power");
     assumeAfterToggle(false);
@@ -699,6 +702,7 @@ static void runAction() {
         actAt = millis() + POLL_REPLY_TIMEOUT_MS; actStep = 2;
         break;
       case 2:
+#if TEMP_PROBE_INDICATES_POWER
         if (probeAnswered()) { setPower(PWR_AWAKE); pollMisses = 0;
                                tlog("power on: OK after %u attempt(s)", actTries);
                                act = ACT_NONE; }
@@ -707,6 +711,13 @@ static void runAction() {
                     "answering. If its USB ports die in standby this is "
                     "expected; see plan §7.", actTries);
                setPower(PWR_ASLEEP); act = ACT_NONE; }
+#else
+        // Nothing can confirm this. Retrying would send wake again, which is
+        // harmless for "on" but pointless — record the intent and stop.
+        tlog("power on: wake sent (cannot be verified on this projector)");
+        assumeAfterToggle(true);
+        act = ACT_NONE;
+#endif
         break;
     }
     return;
@@ -729,6 +740,7 @@ static void runAction() {
       actAt = millis() + POLL_REPLY_TIMEOUT_MS; actStep = 3;
       break;
     case 3:
+#if TEMP_PROBE_INDICATES_POWER
       if (!probeAnswered()) { setPower(PWR_ASLEEP); pollMisses = POLL_MISSES_TO_SLEEP;
                               tlog("power off: OK"); act = ACT_NONE; }
       else if (actTries < 2) { tlog("power off: still awake, retrying");
@@ -736,6 +748,15 @@ static void runAction() {
       else { tlog("power off: FAILED — the confirmation dialog may need a "
                   "different key or delay; tune POWEROFF_CONFIRM_MS");
              setPower(PWR_AWAKE); act = ACT_NONE; }
+#else
+      // This retry was actively harmful. probeAnswered() is always true here —
+      // the projector answers the temperature probe in standby — so a
+      // successful power-off looked like "still awake", the sequence pressed
+      // power a second time, and the projector came straight back on.
+      tlog("power off: sent (cannot be verified on this projector)");
+      assumeAfterToggle(false);
+      act = ACT_NONE;
+#endif
       break;
   }
 }

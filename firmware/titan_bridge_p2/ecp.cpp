@@ -7,6 +7,7 @@
 #include "macros.h"
 #include "irrx.h"
 #include "webui.h"
+#include "icon.h"
 #include "config.h"
 
 static WebServer ui(UI_PORT);
@@ -185,6 +186,12 @@ static void uiRoutes() {
     ui.send_P(200, "text/html", UI_HTML);
   });
 
+  // Served as a real file, not a data: URI — iOS ignores data URIs for
+  // apple-touch-icon, so "Add to Home Screen" would fall back to a screenshot.
+  ui.on("/icon.png", HTTP_GET, []() {
+    ui.sendHeader("Cache-Control", "public, max-age=86400");
+    ui.send_P(200, "image/png", (const char *)APP_ICON_PNG, APP_ICON_PNG_LEN);
+  });
   ui.on("/api/status", HTTP_ANY, []() { okJson(ui, statusJson()); });
   ui.on("/api/keychan", HTTP_ANY, []() {
     String m = ui.arg("mode");
