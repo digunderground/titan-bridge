@@ -74,12 +74,17 @@ textarea{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;
 .acts button .ico{display:block;font-size:19px;margin-bottom:3px}
 @media(max-width:360px){.acts{grid-template-columns:repeat(3,1fr)}}
 .remote{display:grid;gap:16px;justify-items:center;padding:8px 0 4px}
-.pwrrow{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
-.circ{width:52px;height:52px;border-radius:50%;padding:0;display:inline-flex;
-  align-items:center;justify-content:center;font-size:18px}
+.pwrrow{display:flex;gap:8px;justify-content:center;flex-wrap:wrap}
+.pwritem{display:flex;flex-direction:column;align-items:center;gap:5px;width:52px}
+.clab{font-size:10px;color:var(--dim);text-align:center;line-height:1.1}
+.circ{width:48px;height:48px;border-radius:50%;padding:0;display:inline-flex;
+  align-items:center;justify-content:center;font-size:17px}
 .circ.pwr{background:#3a1218;color:#ff8b96}
 .circ.wake{background:#12331c;color:#7ef0a0}
-.dpadwrap{display:flex;gap:14px;align-items:center;justify-content:center;width:100%}
+/* Rockers match the D-pad's height exactly, so the three read as one control
+   surface rather than a circle with oddments beside it. Top-aligned, so the
+   labels hang below a shared baseline instead of pushing the rockers off-centre. */
+.dpadwrap{display:flex;gap:14px;align-items:flex-start;justify-content:center;width:100%}
 .rockcol{flex:0 0 auto}
 .dpad{position:relative;width:min(46vw,204px);aspect-ratio:1;border-radius:50%;
   overflow:hidden;background:#2a1c52;flex:0 0 auto}
@@ -98,8 +103,9 @@ textarea{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;
   width:42%;height:42%;border-radius:50%;background:#1d1436;border:3px solid var(--bg);
   color:#fff;font-weight:600;font-size:15px}
 .okb:active{transform:translate(-50%,-50%) scale(.94)}
-.rock{display:flex;flex-direction:column;background:var(--grp2);border-radius:26px;overflow:hidden}
-.rock button{border-radius:0;background:none;padding:12px 13px;min-height:46px;font-size:17px}
+.rock{display:flex;flex-direction:column;background:var(--grp2);border-radius:26px;
+  overflow:hidden;height:min(46vw,204px)}
+.rock button{border-radius:0;background:none;padding:0 13px;min-height:0;flex:1;font-size:19px}
 .rock i{height:1px;background:var(--sep);font-style:normal}
 .rlab{text-align:center;font-size:11px;color:var(--dim);margin-top:5px}
 .chips{display:flex;flex-wrap:wrap;align-items:center;gap:0;padding:6px 16px 12px}
@@ -140,12 +146,12 @@ nav button.on{color:var(--ac2)}
 <main id=p_remote class=sel>
   <div class=remote>
     <div class=pwrrow>
-      <button class="circ pwr" title="Power off" onclick="go('/api/power?state=off')">⏻</button>
-      <button class="circ wake" title="Wake" onclick="go('/api/power?state=on')">☀</button>
-      <button class=circ title="Blank" onclick="runAct('s:blank')">▤</button>
-      <button class=circ title="Mute" onclick="go('/api/nav?name=mute')">🔇</button>
-      <button class=circ title="Menu" onclick="go('/api/nav?name=menu')">☰</button>
-      <button class=circ title="Back" onclick="go('/api/nav?name=back')">↩</button>
+      <div class=pwritem><button class="circ pwr" onclick="go('/api/power?state=off')">⏻</button><span class=clab>Off</span></div>
+      <div class=pwritem><button class="circ wake" onclick="go('/api/power?state=on')">☀</button><span class=clab>Wake</span></div>
+      <div class=pwritem><button class=circ onclick="runAct('s:blank')">▤</button><span class=clab>Blank</span></div>
+      <div class=pwritem><button class=circ onclick="go('/api/nav?name=mute')">🔇</button><span class=clab>Mute</span></div>
+      <div class=pwritem><button class=circ onclick="go('/api/nav?name=menu')">☰</button><span class=clab>Menu</span></div>
+      <div class=pwritem><button class=circ onclick="go('/api/nav?name=back')">↩</button><span class=clab>Back</span></div>
     </div>
 
     <div class=dpadwrap>
