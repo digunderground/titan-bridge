@@ -106,18 +106,38 @@ nothing, `sweep 01 00 08` walks the whole space.
 
 ## Picture mode — instruction 0x03
 
-| Mode | Param | Frame | Name |
-|---|---|---|---|
-| Vivid | 00 | `2A2A 02 03 00 05` | `vivid` |
-| Movie | 01 | `2A2A 02 03 01 06` | `movie` |
-| IMAX Enhanced | 02 | `2A2A 02 03 02 07` | `imax` |
-| Performance | 05 | `2A2A 02 03 05 0A` | `perf` |
-| TV | 07 | `2A2A 02 03 07 0C` | `tvmode` |
-| Sport | 09 | `2A2A 02 03 09 0E` | `sport` |
-| Filmmaker | 1B | `2A2A 02 03 1B 20` | `filmmaker` |
+**Measured 2026-09-06. Five of the seven documented modes do nothing.**
 
-Parameters 03, 04, 06, 08 and 0A–1A are unassigned in the document. `sweep 03
-00 20` is the cheapest way to find out whether any of them do anything.
+| Mode | Param | Frame | Name | Effect on this unit |
+|---|---|---|---|---|
+| Vivid | 00 | `2A2A 02 03 00 05` | `vivid` | **none** |
+| Movie | 01 | `2A2A 02 03 01 06` | `movie` | **none** |
+| IMAX Enhanced | 02 | `2A2A 02 03 02 07` | `imax` | **none** |
+| Performance | 05 | `2A2A 02 03 05 0A` | `perf` | works |
+| TV | 07 | `2A2A 02 03 07 0C` | `tvmode` | **none** |
+| Sport | 09 | `2A2A 02 03 09 0E` | `sport` | **none** |
+| Filmmaker | 1B | `2A2A 02 03 1B 20` | `filmmaker` | works |
+
+Parameters 03, 04, 06, 08 and 0A–1A are undocumented and were swept: all ACK,
+none change the mode.
+
+Three things this establishes, none of them in the vendor document:
+
+1. **Only `05` and `1B` do anything.** Every other parameter, documented or
+   not, is accepted and discarded.
+2. **The ACK proves receipt, not support and not effect.** A documented mode
+   like `00` ACKs perfectly and leaves the picture untouched. This is the
+   second independent refutation of "no ACK means unsupported" — that claim was
+   already retracted once, and the converse fails too.
+3. **Performance and Filmmaker are not in the on-screen mode list.** The remote
+   offers Standard, Movie, Sports, ISF Day, ISF Night. So the serial parameters
+   and the OSD are two different sets, and `05`/`1B` reach modes the remote
+   cannot. There is no serial parameter for Standard.
+
+Picture mode is **write-only**: changing it from the physical remote produces
+no serial frame at all (verified over a full five-mode walk — the projector
+sent nothing but its 10-second temperature poll), so the current mode cannot be
+read back.
 
 ## Brightness — instruction 0x05
 
@@ -225,10 +245,21 @@ Postbacks arrive **unprompted** as well as in reply:
 | Low temperature shutdown warning | `2A2A 03 13 01 03 1A` |
 | Sensor abnormal (open/short circuit) | `2A2A 03 13 01 04 1B` |
 
-**This is the only feedback channel the projector has.** Everything the bridge
-knows about power state is inferred from it: a reply means awake, silence
-across three polls means asleep. Log it — a high-temperature warning is the
-one thing here worth an alert.
+**This is the only feedback channel the projector has** — and it does not
+report power state. The projector's serial daemon runs in standby and answers
+the temperature probe identically either way, so a reply means the *link* is
+alive, not that the projector is on. An earlier version of this document said
+the opposite; that was wrong, and `TEMP_PROBE_INDICATES_POWER 0` in `config.h`
+encodes the correction. Power state is assumed and user-correctable, because
+nothing on the wire can confirm it.
+
+`0x13` is **not** a general query family. Parameters `01`–`20` were swept
+2026-09-06: every one is ACKed, none returns a data frame. `00` is the only
+parameter that answers. There is no readback for input, picture mode, volume
+or power — the protocol is write-only apart from temperature.
+
+Log the postbacks — a high-temperature warning is the one thing here worth an
+alert.
 
 ---
 

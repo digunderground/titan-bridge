@@ -474,23 +474,36 @@ static void frameComplete(const uint8_t *f, uint8_t n) {
   }
 #endif
 
-  // The projector repeats a status six times, ~50 ms apart. Collapse
-  // consecutive identical frames instead of printing each one.
+  // The projector repeats a *status* six times, ~50 ms apart. Collapse
+  // consecutive identical frames instead of printing each one — but never an
+  // ACK. Probing a parameter means sending the same frame twice and watching
+  // whether it is still answered; collapsing that made the second send look
+  // like it had failed, and cost an hour of wrong conclusions on 2026-09-06.
+  bool isAck = (n >= 6 && (f[3] & 0x80));
   static char     prevHex[52] = "";
   static uint8_t  prevRepeat  = 0;
-  if (!strcmp(hex, prevHex)) {
-    if (prevRepeat < 250) prevRepeat++;
-    return;                       // counted, not printed
+  if (!isAck) {
+    if (!strcmp(hex, prevHex)) {
+      if (prevRepeat < 250) prevRepeat++;
+      return;                     // counted, not printed
+    }
+    if (prevRepeat > 1) tlog("   (previous frame x%u)", prevRepeat);
+    strncpy(prevHex, hex, sizeof(prevHex) - 1);
+    prevHex[sizeof(prevHex) - 1] = 0;
+    prevRepeat = 1;
+  } else if (prevRepeat > 1) {
+    tlog("   (previous frame x%u)", prevRepeat);
+    prevHex[0] = 0;
+    prevRepeat = 0;
   }
-  if (prevRepeat > 1) tlog("   (previous frame x%u)", prevRepeat);
-  strncpy(prevHex, hex, sizeof(prevHex) - 1);
-  prevHex[sizeof(prevHex) - 1] = 0;
-  prevRepeat = 1;
 
   // Undocumented, discovered 2026-09-05: every command is acknowledged with
   // the instruction ORed with 0x80 and the parameter echoed back —
   //   TX 2A 2A 02 03 1B 20  ->  RX 2A 2A 02 83 1B A0
-  // which makes an unsupported command detectable by the *absence* of an ACK.
+  // The ACK confirms RECEIPT ONLY. It does not mean the parameter is
+  // supported, and it does not mean anything changed: 0x00 (Vivid) ACKs
+  // cleanly while leaving the picture mode untouched. Absence of an ACK is
+  // evidence; presence of one is not.
   if (n >= 6 && (f[3] & 0x80)) {
     uint8_t instr = f[3] & 0x7F;
     const char *nm = "?";

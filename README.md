@@ -8,7 +8,7 @@ Exposed three ways at once: a **web app** you can add to a phone's home screen,
 a **REST API** for Home Assistant, and **Roku ECP emulation** so a SofaBaton
 hub discovers it as a TV and drives it with a native remote layout.
 
-> ### Alpha 0.8
+> ### Alpha 0.8.1
 >
 > Working, daily-usable, and verified on **one** unit — an XGIMI TITAN Noir Max.
 > Nothing here has been tried on another projector or another firmware build.
@@ -30,7 +30,7 @@ hub discovers it as a TV and drives it with a native remote layout.
 | Discrete power **on** | ✅ | serial `wake`, or HID `0x66` |
 | Power **off** | ✅ | serial power key + confirm, or HID `0x66` |
 | Direct input select | ✅ | HDMI1 / HDMI2 / **HDMI3** / USB — serial |
-| Picture modes | ✅ | Filmmaker, Movie, IMAX, Vivid, Performance, Sport, TV |
+| Picture modes | ⚠️ | Only **Performance** and **Filmmaker** take effect. See below. |
 | Brightness, blank, high-refresh | ✅ | serial |
 | Volume, mute, autofocus, manual focus | ✅ | |
 | Macro recorder + step editor | ✅ | records real key timing; saves an editable script |
@@ -49,6 +49,20 @@ last did** and labels the result `(assumed)`.
 That is accurate until someone uses the physical remote, which nothing can
 observe. One tap in **Settings → Power state** resyncs it without sending
 anything to the projector.
+
+### Picture modes are mostly decorative
+
+Of the seven modes in XGIMI's published table, **two work**: Performance
+(`0x05`) and Filmmaker (`0x1B`). Vivid, Movie, IMAX, TV and Sport are accepted,
+acknowledged, and ignored — as are all 25 undocumented parameters in the range.
+
+The on-screen menu offers a *different* set again — Standard, Movie, Sports,
+ISF Day, ISF Night — sharing one name with the serial table. Performance and
+Filmmaker do not appear in it at all, yet both work over serial. The two sets
+overlap rather than match, and there is no serial parameter for Standard.
+
+All seven are still exposed, because another TITAN on another firmware build
+may well accept more of them. On this unit, five of them do nothing.
 
 ---
 
@@ -317,6 +331,15 @@ says otherwise.
 - **`0x07` parameter `0x06` opens a calibration test pattern** — a service
   screen with no button on the remote.
 - **Only FTDI binds.** CP2102 and CH340 are never bound by this projector.
+- **An ACK does not mean the command did anything.** Five *documented* picture
+  modes acknowledge cleanly and change nothing. Receipt is all it proves — the
+  converse of the previous point, and it cost a full probing session to notice.
+- **The protocol is write-only apart from temperature.** Instruction `0x13`
+  looked like a query family; parameters `01`–`20` were swept and every one
+  ACKs while returning no data. Nothing reads back input, picture mode, volume
+  or power.
+- **Settings changed on the physical remote are invisible.** A five-mode walk
+  through the picture menu produced no serial traffic whatsoever.
 
 ---
 

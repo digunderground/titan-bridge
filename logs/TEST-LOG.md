@@ -511,3 +511,67 @@ instruction bytes are the cheapest capability this project will ever gain.
 | Instruction | Parameter | Observed effect | Frame |
 |---|---|---|---|
 | | | | |
+
+## 2026-09-06 — picture mode (instruction 0x03): retraction and re-baseline
+
+**Retracted.** I reported that parameter `0x03` selects "Standard". It does not.
+Before the first probe the user had already said *"its on 'standard' nnow"* — the
+projector was in Standard when the test started. I sent `0x00`, then `0x03`, saw
+Standard, and credited it to the command. It was the pre-existing state. Every
+conclusion drawn from that run is void.
+
+**Measured instead** (user tested each documented mode from the web UI):
+
+| param | XGIMI's name | takes effect |
+|-------|--------------|--------------|
+| 0x00  | Vivid        | no  |
+| 0x01  | Movie        | no  |
+| 0x02  | IMAX         | no  |
+| 0x05  | Performance  | **yes** |
+| 0x07  | TV           | no  |
+| 0x09  | Sport        | no  |
+| 0x1B  | Filmmaker    | **yes** |
+| 0x03, 0x04, 0x06, 0x08, 0x0A–0x1A | undocumented | no |
+
+Only `0x05` and `0x1B` change the mode. All of the others ACK and do nothing,
+which is a second, independent confirmation that **an ACK means receipt, not
+support and not effect** — a documented parameter can ACK cleanly and still be
+ignored. Absence of an ACK is evidence; presence of one is not.
+
+Whether a "Standard" parameter exists is still open. Next step is to capture
+what the projector emits (if anything) when the mode is changed from the
+physical remote, which would give the real parameter values rather than
+XGIMI's table.
+
+**Tooling fix made in the same session:** `frameComplete()` collapsed
+consecutive identical frames, including ACKs. Probing means sending the same
+frame twice and watching whether it is still answered, so the collapse made the
+second send look like a failure. ACKs are now exempt from the collapse.
+
+### Query-family sweep — instruction 0x13, params 0x00–0x20
+
+Ran after establishing that picture mode never reports itself, on the theory
+that `0x13` might be a *query* instruction with `0x01` selecting temperature
+(the poll is `2A 2A 02 13 00 15` → `2A 2A 03 13 01 00 17`). If some other
+parameter read back power or input, the bridge could stop guessing at power
+state.
+
+It does not. All 33 parameters ACK; **only `00` returns a data frame.** Across
+the whole sweep the only RX frames in the log were the 10-second temperature
+polls. `0x13` reads temperature and nothing else.
+
+So the protocol is write-only apart from temperature, and temperature does not
+indicate power (the daemon answers in standby). Assumed-and-correctable power
+state stays the right design; there is no wire evidence available to replace it.
+
+### Picture mode is write-only
+
+Full five-mode walk on the physical remote (Standard → Movie → Sports → ISF Day
+→ ISF Night), ~3 s apart, with poll traffic logged. The projector emitted
+**nothing**. 1200 bytes received during the capture, all of it the temperature
+poll. Changing a setting from the remote produces no serial frame.
+
+Also worth recording: that OSD list — Standard, Movie, Sports, ISF Day, ISF
+Night — shares only "Movie" with XGIMI's serial table, and neither Performance
+nor Filmmaker appears in it, though both work over serial. The serial parameter
+set and the on-screen menu are two different worlds.
