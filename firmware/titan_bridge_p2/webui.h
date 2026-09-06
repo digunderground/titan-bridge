@@ -79,8 +79,9 @@ textarea{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;
   align-items:center;justify-content:center;font-size:18px}
 .circ.pwr{background:#3a1218;color:#ff8b96}
 .circ.wake{background:#12331c;color:#7ef0a0}
-.dpadwrap{display:flex;gap:18px;align-items:center;justify-content:center;width:100%}
-.dpad{position:relative;width:min(58vw,232px);aspect-ratio:1;border-radius:50%;
+.dpadwrap{display:flex;gap:14px;align-items:center;justify-content:center;width:100%}
+.rockcol{flex:0 0 auto}
+.dpad{position:relative;width:min(46vw,204px);aspect-ratio:1;border-radius:50%;
   overflow:hidden;background:#2a1c52;flex:0 0 auto}
 .seg4{position:absolute;inset:0;width:100%;height:100%;border:0;border-radius:0;
   background:var(--ac);color:#fff;font-size:19px;display:flex;padding:0}
@@ -98,7 +99,7 @@ textarea{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;
   color:#fff;font-weight:600;font-size:15px}
 .okb:active{transform:translate(-50%,-50%) scale(.94)}
 .rock{display:flex;flex-direction:column;background:var(--grp2);border-radius:26px;overflow:hidden}
-.rock button{border-radius:0;background:none;padding:12px 14px;min-height:46px}
+.rock button{border-radius:0;background:none;padding:12px 13px;min-height:46px;font-size:17px}
 .rock i{height:1px;background:var(--sep);font-style:normal}
 .rlab{text-align:center;font-size:11px;color:var(--dim);margin-top:5px}
 .chips{display:flex;flex-wrap:wrap;align-items:center;gap:0;padding:6px 16px 12px}
@@ -132,7 +133,7 @@ nav button.on{color:var(--ac2)}
 </style>
 
 <header>
-  <h1 id=title>Remote</h1>
+  <h1 id=title>Titan Bridge</h1>
   <div class=status id=hdr><span class="dotp unk"></span>connecting…</div>
 </header>
 
@@ -148,6 +149,13 @@ nav button.on{color:var(--ac2)}
     </div>
 
     <div class=dpadwrap>
+      <div class=rockcol>
+        <div class=rock>
+          <button onclick="go('/api/hid?key=focus%2B')">＋</button><i></i>
+          <button onclick="go('/api/hid?key=focus-')">－</button>
+        </div>
+        <div class=rlab>FOCUS</div>
+      </div>
       <div class=dpad>
         <button class="seg4 up" onclick="go('/api/nav?name=up')">▲</button>
         <button class="seg4 rt" onclick="go('/api/nav?name=right')">▶</button>
@@ -156,17 +164,12 @@ nav button.on{color:var(--ac2)}
         <span class=xa></span><span class=xb></span>
         <button class=okb onclick="go('/api/nav?name=ok')">OK</button>
       </div>
-      <div>
+      <div class=rockcol>
         <div class=rock>
           <button onclick="go('/api/nav?name=volup')">＋</button><i></i>
           <button onclick="go('/api/nav?name=voldn')">－</button>
         </div>
         <div class=rlab>VOL</div>
-        <div class=rock style=margin-top:12px>
-          <button onclick="go('/api/hid?key=focus%2B')">＋</button><i></i>
-          <button onclick="go('/api/hid?key=focus-')">－</button>
-        </div>
-        <div class=rlab>FOCUS</div>
       </div>
     </div>
   </div>
@@ -292,7 +295,7 @@ const $=i=>document.getElementById(i), v=i=>$(i).value.trim();
 function esc(s){return String(s).replace(/[<>&"]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]))}
 
 let curTab='remote';
-const TITLES={remote:'Remote',macros:'Macros',settings:'Settings'};
+const TITLES={remote:'Titan Bridge',macros:'Macros',settings:'Settings'};
 function tab(n){
   curTab=n; $('title').textContent=TITLES[n];
   for(const t of ['remote','macros','settings']){
