@@ -248,4 +248,7 @@
 #define LOG_LINE_MAX              96
 
 // Firmware identity, reported in /api/status and the Roku device-info.
-#define FW_VERSION "titan-bridge-p2 1.0.0"
+// Keep this in step with /VERSION and the git tag — the app compares it against
+// the latest GitHub release to tell you whether the unit is current.
+#define FW_VERSION "0.8.0-alpha"
+#define FW_REPO    "digunderground/titan-bridge"

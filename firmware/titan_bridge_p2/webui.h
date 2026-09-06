@@ -294,6 +294,18 @@ nav button.on{color:var(--ac2)}
     </div>
   </div>
 
+  <div class=grp>
+    <h2>Software</h2>
+    <div class=row><span class=lbl>Installed</span><span class=val id=fwver>—</span></div>
+    <div class=row><span class=lbl>Latest release</span><span class=val id=fwlatest>checking…</span></div>
+    <div class=hstack>
+      <button onclick=checkUpdate()>Check again</button>
+      <a id=fwlink target=_blank rel=noreferrer style=display:none>
+        <button class=pri>View release</button></a>
+    </div>
+    <p class=note id=fwnote></p>
+  </div>
+
   <div class=grp><h2>Status</h2><table id=st></table></div>
 
   <div class=grp>
@@ -341,7 +353,7 @@ function tab(n){
   }
   window.scrollTo(0,0);
   if(n==='macros'){loadMacros();pollRec();}
-  if(n==='settings'){loadRouting();}
+  if(n==='settings'){loadRouting();checkUpdate();}
   refresh();
 }
 async function go(u){try{await fetch(u,{method:'POST'});}catch(e){}refresh();}
@@ -566,6 +578,38 @@ const BUILTIN_ACTIONS=[
               ['s:blank','Blank'],['s:unblank','Unblank']]]
 ];
 
+/* The check runs in the browser, not on the bridge. GitHub sends permissive
+   CORS headers, so the phone can ask directly — which keeps TLS, certificates
+   and an outbound internet path off the device entirely. A bridge that cannot
+   reach the internet is a feature, not a gap. */
+async function checkUpdate(){
+  const s=window._st; if(!s)return;
+  $('fwver').textContent=s.fw;
+  $('fwlatest').textContent='checking…';
+  $('fwnote').textContent='';
+  $('fwlink').style.display='none';
+  let r;
+  try{
+    r=await (await fetch('https://api.github.com/repos/'+(s.repo||'digunderground/titan-bridge')
+      +'/releases/latest',{headers:{'Accept':'application/vnd.github+json'}})).json();
+  }catch(e){
+    $('fwlatest').textContent='could not reach GitHub';
+    $('fwnote').textContent='The phone needs internet access for this; the bridge itself never does.';
+    return;
+  }
+  if(!r||!r.tag_name){$('fwlatest').textContent='no releases found';return;}
+  const latest=String(r.tag_name).replace(/^v/,'');
+  const have=String(s.fw).replace(/^v/,'');
+  $('fwlatest').textContent=r.tag_name;
+  $('fwlink').href=r.html_url; $('fwlink').style.display='';
+  if(latest===have){
+    $('fwnote').innerHTML='<b>Up to date.</b>';
+  }else{
+    $('fwnote').innerHTML='<b class=warn>Update available.</b> Flash it over the air with '
+      +'<code>espota.py -i '+esc(s.ip)+' -p 3232 -f titan_bridge_p2.ino.bin -r</code> — '
+      +'no cable, and settings and macros survive.';
+  }
+}
 async function saveWifi(){
   await fetch('/api/wifi?ssid='+encodeURIComponent(v('ss'))+'&pass='+encodeURIComponent(v('pw')),{method:'POST'});
   alert('Saved. The bridge is rebooting — reconnect to your own network.');

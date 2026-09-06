@@ -249,6 +249,7 @@ String statusJson() {
   j += "\"ip\":\"";     j += netIp();         j += "\",";
   j += "\"ap\":";       j += netApMode() ? "true" : "false"; j += ",";
   j += "\"fw\":\"";     j += FW_VERSION;      j += "\",";
+  j += "\"repo\":\"";   j += FW_REPO;         j += "\",";
   j += "\"heap\":";     j += (uint32_t)ESP.getFreeHeap(); j += ",";
   j += "\"uptime\":";   j += (uint32_t)(millis() / 1000);
   j += "}";
