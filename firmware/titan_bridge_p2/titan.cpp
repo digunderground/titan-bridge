@@ -187,6 +187,7 @@ static uint32_t lastRxAt = 0;           // millis of last byte in
 static bool     everRx   = false;   // any byte at all, including line noise
 static bool     everFrame= false;   // a checksum-valid frame — the real signal
 static uint32_t lastFrameAt = 0;    // millis of the last valid frame
+static bool     inPoll = false;     // routine liveness poll, not a user action
 static uint8_t  lastAckInstr = 0;   // last acknowledged instruction
 static uint32_t lastAckAt = 0;      // millis of that ACK
 static int8_t   lastTemp = -1;
@@ -266,6 +267,9 @@ void titanSendCmd(uint8_t instr, const uint8_t *params, uint8_t nparams) {
   char hex[48]; int p = 0;
   for (uint8_t k = 0; k < i && p < (int)sizeof(hex) - 3; k++)
     p += snprintf(hex + p, sizeof(hex) - p, "%02X ", buf[k]);
+#if !LOG_POLL_TRAFFIC
+  if (inPoll) return;                 // counted in tx, just not narrated
+#endif
   tlog("TX %s", hex);
 }
 
@@ -450,8 +454,23 @@ static void frameComplete(const uint8_t *f, uint8_t n) {
   everFrame = true;
   lastFrameAt = millis();
 
-  // The projector repeats a status six times, ~50 ms apart, and the log ring
-  // is 60 lines — unchecked, a single poll flushes a minute of history. Collapse
+#if !LOG_POLL_TRAFFIC
+  // Handle the liveness poll before anything else touches the log. Its ACK, its
+  // status postback and the "repeated" notice are three separate lines every
+  // ten seconds; leaving any of them in defeats the point.
+  if (n >= 6 && (f[3] & 0x7F) == 0x13) {
+    if (f[3] & 0x80) { lastAckInstr = 0x13; lastAckAt = millis(); return; }
+    if (n >= 7 && f[4] == 0x01) {
+      int8_t was = lastTemp;
+      lastTemp = f[5];
+      if (was == lastTemp) return;                 // unchanged: nothing to say
+      tlog("temperature -> %s", titanTempStr());   // a change is worth a line
+      return;
+    }
+  }
+#endif
+
+  // The projector repeats a status six times, ~50 ms apart. Collapse
   // consecutive identical frames instead of printing each one.
   static char     prevHex[52] = "";
   static uint8_t  prevRepeat  = 0;
@@ -527,7 +546,9 @@ static void setPower(PowerState s) {
 static void sendProbe() {
   probeSentAt = millis();
   probePending = true;
+  inPoll = true;
   titanSendNamed("temp");
+  inPoll = false;
 }
 
 // Did the projector *answer* since the probe went out?
@@ -623,10 +644,17 @@ static bool hidPowerPath() {
 }
 
 void titanPowerOn() {
-  // These guards are about intent, not transport, so they apply whichever
-  // channel ends up carrying the command.
+  // Serial "on" is the documented wake command, which is IDEMPOTENT — waking an
+  // already-awake projector does nothing. So there is no reason to second-guess
+  // it, and every reason not to: our assumption cannot be verified, and
+  // suppressing on a stale belief turns a hub's PowerOn into silence.
+  //
+  // The HID path is a toggle (0x66), where "on" while already on switches the
+  // projector OFF. That one still has to be guarded.
+  const bool onIsIdempotent = !hidPowerPath();
+
   if (titanUsbPowerKnown() && titanUsbAwake()) { tlog("power on: already on"); return; }
-  if (!powerObey && assumedKnown && assumedOn) {
+  if (!onIsIdempotent && !powerObey && assumedKnown && assumedOn) {
     tlog("power on: skipped, believed already on — resync in Settings if wrong");
     return;
   }

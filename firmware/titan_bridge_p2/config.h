@@ -228,7 +228,16 @@
 // --------------------------------------------------------------------------
 // Log ring buffer shown in the web UI and /api/log
 // --------------------------------------------------------------------------
-#define LOG_LINES                 60
+// The ring has to outlive a diagnostic session. At 60 lines the routine
+// temperature poll alone flushed it every ~2.5 minutes, which made "nothing
+// from the hub" indistinguishable from "the evidence scrolled away" — and it
+// was read as the former more than once.
+#define LOG_LINES                160
+
+// Log the 10 s liveness poll. Off by default: it is the single noisiest thing
+// the bridge does and says nothing unless the answer changes, which is logged
+// regardless.
+#define LOG_POLL_TRAFFIC           0
 #define LOG_LINE_MAX              96
 
 // Firmware identity, reported in /api/status and the Roku device-info.

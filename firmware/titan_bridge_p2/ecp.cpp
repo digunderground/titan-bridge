@@ -545,6 +545,21 @@ static void ssdpNotify() {
 }
 
 // Both sockets carry the same kind of request, so handle them the same way.
+// The unicast socket is bound to 0.0.0.0:1900, so on this stack it also
+// receives the multicast the joined socket gets — every search arrived twice,
+// was answered twice, and logged twice. Drop the duplicate.
+static bool ssdpDuplicate(const IPAddress &from, uint16_t port) {
+  static uint32_t lastAt = 0;
+  static uint32_t lastKey = 0;
+  uint32_t key = (uint32_t)from[0] << 24 | (uint32_t)from[1] << 16 |
+                 (uint32_t)from[2] << 8  | (uint32_t)from[3];
+  key ^= (uint32_t)port << 3;
+  uint32_t now = millis();
+  if (key == lastKey && (now - lastAt) < 250) { lastAt = now; return true; }
+  lastKey = key; lastAt = now;
+  return false;
+}
+
 static void ssdpHandle(WiFiUDP &sock, int len) {
   if (len > 0) {
     char buf[512];
@@ -571,9 +586,12 @@ static void ssdpHandle(WiFiUDP &sock, int len) {
         }
         bool match = containsCI(buf, "roku:ecp") || containsCI(buf, "ssdp:all") ||
                      containsCI(buf, "upnp:rootdevice");
+        if (ssdpDuplicate(sock.remoteIP(), sock.remotePort())) return;
         if (match) ssdpRespond(sock.remoteIP(), sock.remotePort());
-        tlog("SSDP %s from %s ST=%s", match ? "ANSWERED" : "ignored",
-             sock.remoteIP().toString().c_str(), st);
+        // Only narrate searches we answer. Other devices' SSDP is constant on a
+        // normal LAN and buried the lines that matter.
+        if (match) tlog("SSDP answered %s ST=%s",
+                        sock.remoteIP().toString().c_str(), st);
       }
     }
   }
