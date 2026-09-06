@@ -196,6 +196,11 @@ static Step    steps[MACRO_MAX_STEPS];
 static uint16_t nSteps = 0, curStep = 0;
 static uint32_t nextAt = 0;
 static bool     running = false;
+// Set by a "fast" token in the script. Recording captures real human pauses,
+// which is the honest thing to store — but a macro that only fires serial
+// commands does not need them. This strips the waits at run time, leaving the
+// recorded timing intact in the script for when it does matter.
+static bool     fastMode = false;
 static char     curName[24] = "";
 
 bool  macroBusy()    { return running; }
@@ -219,6 +224,9 @@ static bool pushStep(uint8_t type, const char *arg, uint16_t ms) {
 
 static bool pushToken(const char *tok) {
   if (!*tok) return true;
+
+  // Marker, not a step: "fast" anywhere in a script drops its waits.
+  if (!strcasecmp(tok, "fast")) { fastMode = true; return true; }
 
   if (!strcasecmp(tok, "anchor")) {
     // Unwind whatever is on screen, then enter at a known root.
@@ -288,6 +296,7 @@ static bool compileAppend(const char *script) {
 
 static bool compile(const char *script) {
   nSteps = curStep = 0;
+  fastMode = false;
   if (!compileAppend(script)) return false;
   return nSteps > 0;
 }
@@ -323,7 +332,7 @@ void macrosLoop() {
   uint32_t gap = MACRO_STEP_MS;
 
   switch (s.type) {
-    case ST_DELAY:  gap = s.ms; break;
+    case ST_DELAY:  gap = fastMode ? 0 : s.ms; break;
     case ST_SERIAL: if (!titanSendNamed(s.arg)) tlog("macro: unknown command '%s'", s.arg); break;
     case ST_HID:    if (!titanHid(s.arg))       tlog("macro: unknown HID key '%s'", s.arg); break;
     case ST_KEY:    if (!titanKey(s.arg))       tlog("macro: key '%s' failed on the %s channel",
@@ -333,7 +342,7 @@ void macrosLoop() {
       if (!strcasecmp(s.arg, "on"))       titanPowerOn();
       else if (!strcasecmp(s.arg, "off")) titanPowerOff();
       else                                titanPowerToggle();
-      gap = 500;
+      gap = fastMode ? 0 : 500;
       break;
   }
   nextAt = millis() + gap;
@@ -419,21 +428,30 @@ String recJson() {
   return out;
 }
 
-String recScript() {
+// maxGap clamps the operator's thinking time out of the playback. A recorded
+// pause of four seconds says nothing about what the OSD needs; the useful
+// number is the shortest gap it keeps up with. Pass a large maxGap to keep the
+// timing exactly as recorded.
+String recScriptTimed(uint16_t maxGap) {
   String sc;
   for (uint16_t i = 0; i < recN; i++) {
     if (i) {
       sc += "; ";
-      if (recBuf[i].gap >= 20) { sc += 'd'; sc += recBuf[i].gap; sc += "; "; }
+      uint16_t g = recBuf[i].gap;
+      if (g > maxGap)          g = maxGap;
+      if (g < RECORD_MIN_GAP_MS) g = RECORD_MIN_GAP_MS;
+      sc += 'd'; sc += g; sc += "; ";
     }
     sc += recBuf[i].tok;
   }
   return sc;
 }
 
-bool recSaveAs(const char *name, const char *group) {
+String recScript() { return recScriptTimed(RECORD_MAX_GAP_MS); }
+
+bool recSaveAs(const char *name, const char *group, uint16_t maxGap) {
   if (!recN) return false;
-  String sc = recScript();
+  String sc = recScriptTimed(maxGap ? maxGap : RECORD_MAX_GAP_MS);
   return macroDefineIn(name, group ? group : "", sc.c_str());
 }
 

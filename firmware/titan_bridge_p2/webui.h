@@ -204,8 +204,21 @@ nav button.on{color:var(--ac2)}
     <div class=chips id=recsteps></div>
     <div class=hstack>
       <input id=rn placeholder="Name"><input id=rg placeholder="Group" list=grouplist>
+    </div>
+    <div class=hstack>
+      <select id=rspeed>
+        <option value=300>Fast — cap gaps at 300ms</option>
+        <option value=600 selected>Normal — cap at 600ms</option>
+        <option value=1000>Relaxed — cap at 1s</option>
+        <option value=10000>Exactly as recorded</option>
+      </select>
       <button class=pri onclick=recSave()>Save</button>
     </div>
+    <p class=note>Recording captures <b>your</b> timing, including the pauses you
+      take while thinking. Cap them here, or keep them and use the <b>Fast</b>
+      switch on a saved macro to drop the waits at run time — useful when a
+      macro only fires direct commands and never walks a menu. Menu walking
+      usually needs the pauses.</p>
   </div>
 
   <div class=grp><h2>Saved</h2><div id=macs></div></div>
@@ -225,7 +238,7 @@ nav button.on{color:var(--ac2)}
     <p class=note><code>k:</code> follows the active channel ·
       <code>h:</code>/<code>s:</code> force HID or serial ·
       <code>m:</code> runs another macro · <code>d500</code> waits ·
-      <code>tok*3</code> repeats.</p>
+      <code>tok*3</code> repeats · <code>fast</code> anywhere drops every wait.</p>
   </div>
   <datalist id=grouplist></datalist>
 </main>
@@ -412,7 +425,8 @@ async function recEdit(i){
 }
 async function recSave(){
   if(!v('rn'))return alert('Name required');
-  await rec('save','&name='+encodeURIComponent(v('rn'))+'&group='+encodeURIComponent(v('rg')));
+  await rec('save','&name='+encodeURIComponent(v('rn'))+'&group='+encodeURIComponent(v('rg'))
+    +'&maxgap='+encodeURIComponent($('rspeed').value));
   loadMacros();
 }
 
@@ -455,11 +469,26 @@ async function loadMacros(){
   $('macs').innerHTML=names.map(k=>`<h2>${esc(k)}</h2>`+g[k].map(x=>`
     <div class=mac><div style="display:flex;gap:8px;align-items:center">
       <button class=pri style="flex:1;text-align:left" onclick="go('/api/macro?name=${encodeURIComponent(x.name)}')">${esc(x.name)}</button>
+      <button class="${/(^|;)\s*fast(\s|;|$)/.test(x.script)?'pri':''}"
+        onclick="toggleFast('${esc(x.name).replace(/'/g,"\\'")}')"
+        title="Run without the recorded pauses">Fast</button>
       <button onclick="editMacro('${esc(x.name).replace(/'/g,"\\'")}')">Edit</button>
       ${x.user?`<button class=dg onclick="delMacro('${esc(x.name).replace(/'/g,"\\'")}')">Delete</button>`:''}
     </div><code>${esc(x.script)}</code></div>`).join('')).join('');
   $('grouplist').innerHTML=names.filter(k=>k!=='built-in'&&k!=='ungrouped')
     .map(k=>`<option value="${esc(k)}">`).join('');
+}
+/* "fast" is a marker token, not a step — so toggling it is a text edit on the
+   saved script, and the recorded timing stays in place for when it is needed. */
+async function toggleFast(n){
+  const m=(window._macs||[]).find(x=>x.name===n); if(!m)return;
+  const toks=m.script.split(';').map(t=>t.trim()).filter(Boolean);
+  const i=toks.findIndex(t=>t.toLowerCase()==='fast');
+  if(i>=0) toks.splice(i,1); else toks.unshift('fast');
+  await fetch('/api/macdef?name='+encodeURIComponent(m.name)
+    +'&group='+encodeURIComponent(m.group==='built-in'?'':m.group)
+    +'&script='+encodeURIComponent(toks.join('; ')),{method:'POST'});
+  loadMacros();
 }
 async function delMacro(n){
   if(!confirm('Delete "'+n+'"?'))return;

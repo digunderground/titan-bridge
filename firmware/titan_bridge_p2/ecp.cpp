@@ -361,7 +361,8 @@ static void uiRoutes() {
     else if (st == "save") {
       String n = argOr(ui, "name"), g = argOr(ui, "group");
       if (!n.length())               { okText(ui, "name required"); return; }
-      if (!recSaveAs(n.c_str(), g.c_str())) { okText(ui, "nothing recorded, or store full"); return; }
+      uint16_t mx = (uint16_t)argOr(ui, "maxgap", "0").toInt();
+      if (!recSaveAs(n.c_str(), g.c_str(), mx)) { okText(ui, "nothing recorded, or store full"); return; }
     }
     okJson(ui, recJson());
   });

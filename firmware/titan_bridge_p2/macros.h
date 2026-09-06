@@ -59,7 +59,8 @@ bool     recDeleteStep(uint16_t idx);
 bool     recInsertStep(uint16_t idx, const char *tok, uint16_t gap);
 String   recJson();
 String   recScript();
-bool     recSaveAs(const char *name, const char *group);
+bool     recSaveAs(const char *name, const char *group, uint16_t maxGap);
+String   recScriptTimed(uint16_t maxGap);
 
 // --------------------------- button assignments ----------------------------
 // The virtual remote's buttons are data. Each id maps to a label and an action,

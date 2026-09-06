@@ -207,6 +207,12 @@
 #define MACRO_ANCHOR_MS          400    // gap during the anchor sequence
 #define MACRO_MAX_STEPS          128
 
+// Recording captures the operator's timing, which is far slower than the OSD
+// needs — a recorded macro played back the pauses you took while thinking.
+// Gaps are clamped into this range when a recording is saved.
+#define RECORD_MIN_GAP_MS        120
+#define RECORD_MAX_GAP_MS        600
+
 // --------------------------------------------------------------------------
 // Roku ECP emulation (plan §5, "The Roku trick")
 // --------------------------------------------------------------------------
