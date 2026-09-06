@@ -157,6 +157,19 @@ displaying a confident guess.
 `TEMP_PROBE_INDICATES_POWER` in `config.h` re-enables the old inference for a
 projector that is actually shown to go quiet in standby.
 
+### Instruction 0x07 sweep — one undocumented key found
+
+`0x01`-`0x05` and `0x07`: acknowledged, no visible effect.
+**`0x06`: opens a black-and-white calibration / test pattern.** Undocumented,
+no button on the remote, exits with `back`.
+
+The four shortcut keys on the physical remote are **not** in this range.
+
+Method note: the first attempt swept all seven codes in one pass with 5 s gaps,
+which established only that *something* in the range did *something* — the log
+ring had rotated by the time it was reported. Redone one code at a time with
+confirmation between each, which identified `0x06` immediately.
+
 ### Commands sent in standby are honoured — input can be pre-selected
 
 The projector was left on HDMI3 and switched off. With it off, `hdmi1` was sent

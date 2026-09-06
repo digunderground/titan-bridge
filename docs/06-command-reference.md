@@ -48,6 +48,32 @@ the screen.
 A status postback (e.g. temperature) arrives **six times, ~50 ms apart**, after
 the ACK.
 
+## Key simulation — instruction 0x07, undocumented parameters
+
+Swept one code at a time with visual confirmation, 2026-09-05. XGIMI documents
+`0x08`-`0x15`; the range below it was unexplored.
+
+| Param | Effect |
+|---|---|
+| `0x01`-`0x05`, `0x07` | acknowledged, **no visible effect** |
+| **`0x06`** | **opens a black-and-white calibration / test pattern** |
+
+`0x06` is a genuine find: a service screen with no button on the remote and no
+mention in XGIMI's table. It exits with `back`.
+
+**The remote's four shortcut keys are not in this range**, and may not be
+exposed over serial at all. Assignable buttons backed by recorded macros are a
+better route to the same outcome — more than four of them, with labels.
+
+Sweeping further (`0x16`+) was deliberately stopped: the codes are sparse, and
+the odds of finding another service screen outweigh the value of finding
+another key. If it is ever resumed, do it **one code at a time with the screen
+in view** — a seven-code batch identified only that "something in this range
+does something", which is barely a result.
+
+Note this also confirms, on a second instruction, that **an ACK says nothing
+about whether a code is live**. Six of these acknowledged and did nothing.
+
 ## Frame format
 
 ```
