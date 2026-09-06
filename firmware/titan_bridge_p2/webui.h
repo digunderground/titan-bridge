@@ -243,8 +243,8 @@ nav button.on{color:var(--ac2)}
   <div class=grp>
     <h2>Power</h2>
     <div class=seg>
-      <button id=pmAssume onclick="go('/api/power?state=mode&m=assume')">Skip if already there</button>
       <button id=pmObey onclick="go('/api/power?state=mode&m=obey')">Always act</button>
+      <button id=pmAssume onclick="go('/api/power?state=mode&m=assume')">Skip if already there</button>
     </div>
     <p class=note id=pmnote></p>
     <div class=hstack>
@@ -566,8 +566,8 @@ async function refresh(){
   $('pmAssume').className=s.powermode==='assume'?'on':'';
   $('pmObey').className=s.powermode==='obey'?'on':'';
   $('pmnote').textContent=s.powermode==='obey'
-    ? 'Every press sends the power key; a repeat within 4s is ignored. Honest, but not discrete — the key is a toggle.'
-    : 'Presses are filtered against the state below. Discrete when that is right, silently inert when it has drifted.';
+    ? 'Every press acts, with a 4s debounce so one press is one toggle. Recommended: a hub tracks its own state, and nothing here can verify ours.'
+    : 'Presses are filtered against the state below. Genuinely discrete while that belief is right — but it cannot be verified, and when it drifts the button silently does nothing until you resync.';
   $('obsnote').innerHTML=s.powerobserved
     ? 'This projector reports its power state, so the above is measured.'
     : '<b>Assumed, not measured.</b> Nothing on this projector reports power — the '

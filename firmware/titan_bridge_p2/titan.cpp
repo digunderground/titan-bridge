@@ -289,7 +289,11 @@ bool titanSendNamed(const char *name) {
   // through. Sending "wake" via /api/cmd bypasses the power state machine, so
   // the projector woke while the bridge went on believing it was off — the
   // same hole /api/hidraw opened when it fired the HID power key directly.
-  if (c->instr == 0x09) assumeAfterToggle(true);          // wake
+  if (c->instr == 0x09) assumeAfterToggle(true);          // wake — discrete on
+  // The power key is a toggle wherever it comes from, including a raw macro
+  // step or a remapped hub button. Tracking it here keeps the assumed state
+  // closer to reality than only watching titanPowerOn/Off did.
+  if (c->instr == 0x07 && c->p[0] == 0x00) assumeAfterToggle(!assumedOn);
   return true;
 }
 
@@ -595,7 +599,14 @@ static void assumeBegin() {
 
 // Who decides whether a power command is needed.
 //
-//   ASSUME (default) — suppress when our own assumption already matches.
+//   OBEY (default) — do what you are told, with a short debounce so one press
+//     is one toggle. Chosen because the guard's belief cannot be verified and
+//     drifts in practice — raw scripts, the physical remote and macros all
+//     change the projector without telling it — and a drifted guard makes the
+//     button silently do nothing, which needs manual repair. A hub that tracks
+//     its own state will not send "off" twice, so the double-toggle this
+//     exposes is largely theoretical.
+//   ASSUME — suppress when our own assumption already matches.
 //     The power key is a *toggle*, so obeying blindly means PowerOn on an
 //     already-on projector turns it off: the buttons appear reversed. An
 //     assumption that is right gives genuinely discrete behaviour, and the
@@ -607,7 +618,7 @@ static void assumeBegin() {
 // With no feedback from the projector neither is perfect. ASSUME fails by
 // doing nothing; OBEY fails by doing the opposite of what the label says —
 // and the second is worse, because it looks like a wiring bug.
-static bool     powerObey = false;
+static bool     powerObey = true;
 static uint32_t lastPowerAt = 0;
 
 bool        titanPowerObey()  { return powerObey; }
@@ -622,7 +633,7 @@ void titanSetPowerObey(bool obey) {
 
 static void powerModeBegin() {
   Preferences p; p.begin("titan", true);
-  powerObey = p.getBool("pwrobey", false);
+  powerObey = p.getBool("pwrobey", true);
   p.end();
 }
 
