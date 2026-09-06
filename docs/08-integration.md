@@ -76,6 +76,27 @@ The `s:` entries that remain have no HID equivalent. On a projector without a
 working serial channel they do nothing, and the fix is a recorded menu macro
 bound to a button (below) rather than an ECP key.
 
+### Remapping a hub button
+
+The key map above is a **default, not a decision**. Settings → *Hub buttons*
+lists every ECP key the hub can send, what it currently runs, and whether it
+has been overridden. Tap a row to change it to a saved macro, a built-in
+action, or your own script; **Restore default** clears one, **Reset all**
+clears the lot. Overrides live in NVS and survive a reflash.
+
+This is also the escape hatch when the bridge's own logic is in the way. The
+power actions (`p:on` / `p:off`) are idempotent and consult an *assumed* power
+state, which cannot be verified on this projector and can drift. Mapping
+`PowerOff` to the literal
+
+```
+s:power; d900; s:ok
+```
+
+sends the key sequence unconditionally — no state machine, no assumed-state
+guard, no debounce, no busy check. Worth knowing about; not the default,
+because an unconditional power key on an already-off projector switches it on.
+
 ### Macros as Roku apps — reaching the hub beyond the key map
 
 A Roku remote has a fixed button layout, so a macro has no key to live on. But

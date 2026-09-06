@@ -7,6 +7,7 @@
 #include "macros.h"
 #include "irrx.h"
 #include "webui.h"
+#include <Preferences.h>
 #include "icon.h"
 #include "config.h"
 
@@ -101,7 +102,99 @@ static bool runAction(const char *action) {
   return macroRunScript(action);
 }
 
+// ===========================================================================
+// User overrides for the key map.
+//
+// The compiled ECPMAP is a default, not a decision. A hub button that does the
+// wrong thing — or a macro you would rather have on it — should be fixable from
+// the app rather than by reflashing. Overrides live in NVS as "key\taction"
+// lines and shadow the table; clearing one restores the default.
+// ===========================================================================
+static void jesc(String &o, const String &s);   // defined with statusJson, below
+
+static Preferences ecpPrefs;
+static String      ecpOverrides;
+
+static void ecpMapLoad() {
+  ecpPrefs.begin("titan", true);
+  ecpOverrides = ecpPrefs.getString("ecpmap", "");
+  ecpPrefs.end();
+}
+static void ecpMapSave() {
+  ecpPrefs.begin("titan", false);
+  ecpPrefs.putString("ecpmap", ecpOverrides);
+  ecpPrefs.end();
+}
+
+static int ecpFind(const char *key, int *lineEnd = NULL) {
+  String want = String(key) + "\t";
+  int i = 0;
+  while (i < (int)ecpOverrides.length()) {
+    int e = ecpOverrides.indexOf('\n', i); if (e < 0) e = ecpOverrides.length();
+    if (ecpOverrides.substring(i, e).startsWith(want)) { if (lineEnd) *lineEnd = e; return i; }
+    i = e + 1;
+  }
+  return -1;
+}
+
+static String ecpOverrideFor(const char *key) {
+  int e, i = ecpFind(key, &e);
+  if (i < 0) return String();
+  int t = ecpOverrides.indexOf('\t', i);
+  return ecpOverrides.substring(t + 1, e);
+}
+
+static bool ecpClear(const char *key) {
+  int e, i = ecpFind(key, &e);
+  if (i < 0) return false;
+  ecpOverrides.remove(i, (e < (int)ecpOverrides.length() ? e + 1 : e) - i);
+  ecpMapSave();
+  return true;
+}
+
+static bool ecpSet(const char *key, const char *action) {
+  if (!key || !*key) return false;
+  if (strchr(key, '\t') || strchr(key, '\n')) return false;
+  ecpClear(key);
+  if (!action || !*action) return true;         // cleared back to the default
+  String keep = ecpOverrides;
+  ecpOverrides += String(key) + "\t" + action + "\n";
+  if (ecpOverrides.length() > ECP_MAP_MAX) {
+    ecpOverrides = keep;
+    tlog("ECP map full — '%s' NOT saved", key);
+    return false;
+  }
+  ecpMapSave();
+  tlog("ECP '%s' -> %s", key, action);
+  return true;
+}
+
+static void ecpResetAll() {
+  ecpOverrides = "";
+  ecpMapSave();
+  tlog("ECP map reset to defaults");
+}
+
+// Every key the hub can send, its default, and any override.
+static String ecpMapJson() {
+  String out = "[";
+  for (size_t i = 0; i < NECPMAP; i++) {
+    if (i) out += ',';
+    String ov = ecpOverrideFor(ECPMAP[i].key);
+    out += "{\"key\":\""; out += ECPMAP[i].key;
+    out += "\",\"def\":\"";  jesc(out, String(ECPMAP[i].action));
+    out += "\",\"action\":\"";
+    jesc(out, ov.length() ? ov : String(ECPMAP[i].action));
+    out += "\",\"custom\":"; out += ov.length() ? "true" : "false";
+    out += '}';
+  }
+  out += ']';
+  return out;
+}
+
 static bool ecpKey(const char *key) {
+  String ov = ecpOverrideFor(key);
+  if (ov.length()) return runAction(ov.c_str());
   for (size_t i = 0; i < NECPMAP; i++)
     if (!strcasecmp(key, ECPMAP[i].key)) return runAction(ECPMAP[i].action);
   tlog("ECP key '%s' is not mapped", key);
@@ -285,6 +378,14 @@ static void uiRoutes() {
   });
 
   // -------------------------- button assignments ---------------------------
+  ui.on("/api/ecpmap", HTTP_ANY, []() { okJson(ui, ecpMapJson()); });
+  ui.on("/api/ecpset", HTTP_ANY, []() {
+    String k = argOr(ui, "key");
+    if (!k.length()) { okText(ui, "key required"); return; }
+    ecpSet(k.c_str(), argOr(ui, "action").c_str());
+    okJson(ui, ecpMapJson());
+  });
+  ui.on("/api/ecpreset", HTTP_ANY, []() { ecpResetAll(); okJson(ui, ecpMapJson()); });
   ui.on("/api/buttons", HTTP_ANY, []() { okJson(ui, buttonsJson()); });
   ui.on("/api/button", HTTP_ANY, []() {
     String id = argOr(ui, "id");
@@ -623,6 +724,7 @@ void ecpBegin() {
   snprintf(deviceId, sizeof(deviceId), "%02X%02X%02X%02X%02X%02X",
            mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
 
+  ecpMapLoad();
   uiRoutes();
   ui.begin();
   tlog("UI + REST on http://%s/", netIp().c_str());

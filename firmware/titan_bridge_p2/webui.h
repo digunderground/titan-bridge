@@ -255,12 +255,30 @@ nav button.on{color:var(--ac2)}
   </div>
 
   <div class=grp>
-    <h2>Routing — what the SofaBaton sends</h2>
+    <h2>Hub buttons — what each one runs</h2>
     <table id=routing></table>
-    <p class=note>Roku ECP keys arrive from the hub and resolve here.
-      <code>k:</code> follows the channel above, so switching it re-routes the
-      hub's arrow keys with no change at the hub. Saved macros are also
-      published as Roku apps and can be launched by the hub directly.</p>
+    <div class=hstack>
+      <button class=dg onclick=ecpReset()>Reset all to defaults</button>
+    </div>
+    <p class=note>Tap a row to change what a SofaBaton button does — a saved
+      macro, a built-in action, or your own script. <b>Overridden</b> rows are
+      marked; clearing one restores the default.
+      <code>k:</code> follows the control channel above, so switching that
+      re-routes the arrow keys with no change at the hub.</p>
+  </div>
+
+  <div class=grp id=ecpCard style=display:none>
+    <h2 id=ecpTitle>Map button</h2>
+    <div class=hstack><select id=ecpAction onchange=ecpChanged()></select></div>
+    <div class=hstack id=ecpCustomRow style=display:none>
+      <input id=ecpCustom placeholder="s:power; d900; s:ok">
+    </div>
+    <p class=note id=ecpDefNote></p>
+    <div class=hstack>
+      <button class=pri onclick=ecpSave()>Save</button>
+      <button onclick=ecpClose()>Cancel</button>
+      <button class=dg onclick=ecpRestore()>Restore default</button>
+    </div>
   </div>
 
   <div class=grp><h2>Status</h2><table id=st></table></div>
@@ -448,22 +466,76 @@ async function delMacro(n){
   await fetch('/api/macdel?name='+encodeURIComponent(n),{method:'POST'});loadMacros();
 }
 
-/* Mirrors ECPMAP in ecp.cpp. Kept visible so what the hub sends and where it
-   lands is inspectable rather than buried in firmware. */
-const ROUTING=[
-  ['PowerOn / PowerOff / Power','p:on · p:off · p:toggle','power state machine'],
-  ['Up / Down / Left / Right','k:up · k:down · k:left · k:right','active channel'],
-  ['Select / Back / Home','k:ok · k:back · k:home','active channel'],
-  ['Options','k:setting','active channel'],
-  ['VolumeUp / VolumeDown','k:volup · k:voldn','active channel'],
-  ['VolumeMute','s:mute','serial only'],
-  ['InputHDMI1 / 2 / 3','s:hdmi1 · s:hdmi2 · s:hdmi3','serial only'],
-  ['Launch app 100+','saved macro, by index','macro engine']
-];
-function loadRouting(){
-  $('routing').innerHTML='<tr><th>Hub sends</th><th>Runs</th><th>Via</th></tr>'
-    +ROUTING.map(([k,a,c])=>`<tr><td>${esc(k)}</td><td><code>${esc(a)}</code></td><td>${esc(c)}</td></tr>`).join('');
+/* The hub's key map is data, not firmware. Read it live so what a button does
+   is inspectable and changeable without a reflash. */
+let ecpKeyName=null;
+async function loadRouting(){
+  let m;try{m=await (await fetch('/api/ecpmap')).json();}catch(e){return;}
+  window._ecp=m;
+  $('routing').innerHTML='<tr><th>Hub button</th><th>Runs</th><th></th></tr>'
+    +m.map(r=>`<tr onclick="ecpOpen('${esc(r.key)}')" style=cursor:pointer>
+        <td>${esc(r.key)}</td>
+        <td><code>${esc(r.action)}</code></td>
+        <td class=val>${r.custom?'overridden':''}</td></tr>`).join('');
 }
+async function ecpOpen(key){
+  ecpKeyName=key;
+  const r=(window._ecp||[]).find(x=>x.key===key); if(!r)return;
+  $('ecpTitle').textContent=key;
+  $('ecpDefNote').innerHTML='Default: <code>'+esc(r.def)+'</code>'
+    +(r.custom?' — currently overridden.':'');
+
+  let macs=window._macs;
+  if(!macs){try{macs=await (await fetch('/api/macros')).json();window._macs=macs;}catch(e){macs=[];}}
+  let html='';
+  if(macs.length) html+='<optgroup label="Macros">'+macs.map(x=>
+    `<option value="m:${esc(x.name)}">${esc(x.name)}</option>`).join('')+'</optgroup>';
+  for(const [g,items] of BUILTIN_ACTIONS)
+    html+=`<optgroup label="${esc(g)}">`+items.map(([a,l])=>
+      `<option value="${esc(a)}">${esc(l)}</option>`).join('')+'</optgroup>';
+  html+='<optgroup label="Other"><option value="__custom">Custom script…</option></optgroup>';
+  $('ecpAction').innerHTML=html;
+  const known=[...$('ecpAction').options].some(o=>o.value===r.action);
+  $('ecpAction').value=known?r.action:'__custom';
+  $('ecpCustom').value=known?'':r.action;
+  ecpChanged();
+  $('ecpCard').style.display='';
+  $('ecpCard').scrollIntoView({behavior:'smooth',block:'center'});
+}
+function ecpChanged(){
+  $('ecpCustomRow').style.display=$('ecpAction').value==='__custom'?'':'none';
+}
+function ecpClose(){$('ecpCard').style.display='none';ecpKeyName=null;}
+async function ecpSave(){
+  let a=$('ecpAction').value;
+  if(a==='__custom')a=$('ecpCustom').value.trim();
+  if(!a)return alert('Pick or type an action.');
+  await fetch('/api/ecpset?key='+encodeURIComponent(ecpKeyName)
+    +'&action='+encodeURIComponent(a),{method:'POST'});
+  ecpClose();loadRouting();
+}
+async function ecpRestore(){
+  await fetch('/api/ecpset?key='+encodeURIComponent(ecpKeyName)+'&action=',{method:'POST'});
+  ecpClose();loadRouting();
+}
+async function ecpReset(){
+  if(!confirm('Reset every hub button to its default?'))return;
+  await fetch('/api/ecpreset',{method:'POST'});loadRouting();
+}
+
+/* Offered in both the button editor and the hub-key editor. */
+const BUILTIN_ACTIONS=[
+  ['Power',[['p:on','Power on'],['p:off','Power off'],['p:toggle','Power toggle'],
+            ['s:wake','Wake (serial, discrete)'],
+            ['s:power; d900; s:ok','Power off, raw — bypasses the state machine']]],
+  ['Navigation',[['k:up','Up'],['k:down','Down'],['k:left','Left'],['k:right','Right'],
+                 ['k:ok','OK'],['k:back','Back'],['k:menu','Menu'],['k:home','Home']]],
+  ['Sound & lens',[['k:volup','Volume +'],['k:voldn','Volume −'],['s:mute','Mute'],
+                   ['h:focus+','Focus +'],['h:focus-','Focus −'],['s:autofocus','Autofocus']]],
+  ['Inputs',[['s:hdmi1','HDMI1'],['s:hdmi2','HDMI2'],['s:hdmi3','HDMI3'],['s:usbsrc','USB']]],
+  ['Picture',[['s:filmmaker','Filmmaker'],['s:movie','Movie'],['s:vivid','Vivid'],
+              ['s:blank','Blank'],['s:unblank','Unblank']]]
+];
 
 async function saveWifi(){
   await fetch('/api/wifi?ssid='+encodeURIComponent(v('ss'))+'&pass='+encodeURIComponent(v('pw')),{method:'POST'});
