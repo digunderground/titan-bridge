@@ -8,7 +8,7 @@ Exposed three ways at once: a **web app** you can add to a phone's home screen,
 a **REST API** for Home Assistant, and **Roku ECP emulation** so a SofaBaton
 hub discovers it as a TV and drives it with a native remote layout.
 
-> ### Alpha 0.8.2
+> ### Alpha 0.8.3
 >
 > Working, daily-usable, and verified on **one** unit — an XGIMI TITAN Noir Max.
 > Nothing here has been tried on another projector or another firmware build.

@@ -370,7 +370,7 @@ static void uiRoutes() {
     // is already off. For "I can see it is on, you are wrong" — never for the
     // hub, whose PowerOff must stay guarded.
     const bool force = (argOr(ui, "force", "0") == "1");
-    if      (st == "on")  titanPowerOn();
+    if      (st == "on")  titanPowerOn(force);
     else if (st == "off") titanPowerOff(force);
     else                  titanPowerToggle();
     okText(ui, "ok");

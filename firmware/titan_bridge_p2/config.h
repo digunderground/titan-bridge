@@ -168,16 +168,35 @@
 // wait, then a back-key nudge, on theories that were never measured against
 // that baseline — and power-off went to failing 10/10. Change one thing at a
 // time, against a known-good.
+// The projector refuses the power key while sitting on a no-signal input
+// screen — from the OEM remote as well as from serial, so it is a projector
+// state, not a delivery problem. Opening the on-screen menu and closing it
+// again makes the very same power frame work. Measured 2026-09-07.
+#define POWEROFF_OSD_MS          700UL   // gap between the OSD wake-up presses
 #define POWEROFF_ACK_WAIT_MS     400UL   // wait for the power key's ACK before trusting it
-#define POWEROFF_TRIES              3    // power-key attempts before giving up
-#define POWEROFF_CONFIRM_MS      900UL   // power key -> confirmation dialog -> OK
+#define POWEROFF_CYCLES             2    // full power+OK cycles, as the original did
+// Measured 2026-09-07 from a power-off that actually worked: the operator's OK
+// landed 2.4 s after the power key. 900 ms was a guess and sat right on the
+// edge of the dialog appearing, which is why power-off was intermittent for
+// days. The dialog lives ~15 s, so there is no reason to be quick about it.
+#define POWEROFF_CONFIRM_MS      900UL   // power key -> confirmation dialog -> OK (original)
 #define POWEROFF_SETTLE_MS      6000UL   // after OK, before assuming it took
 
-// Do not poll a projector we believe is OFF. The 10 s temperature probe is the
-// only thing this bridge sends unprompted, it is excluded from the log, and it
-// keeps running all night into a sleeping projector. Spontaneous power-ons were
-// reported to follow shutdowns regardless of how the projector was turned off —
-// and the poll is the one variable common to every one of those cases.
+// Do NOT poll a projector believed to be off.
+//
+// 2026-09-07: the projector was off, the bridge sent no commands at all for
+// four minutes, and it switched itself on. The ONLY thing on the wire was this
+// 10 s probe — and it is excluded from the log, which is why every reading of
+// "nothing was sent" was wrong.
+//
+// The hub re-asserting PowerOn (R-0001) was a real and separate cause, now
+// fixed; it was not the only one. This gate was briefly reverted because it
+// coupled to hidPowerPath() via everFrame and broke power routing. That
+// coupling is now gone, so the gate can stand on its own.
+//
+// It costs nothing: the projector answers the probe identically in standby
+// (TEMP_PROBE_INDICATES_POWER 0), so polling a sleeping projector buys no
+// information whatsoever.
 #define POLL_WHEN_BELIEVED_OFF     0
 #define ACK_TIMEOUT_MS           250UL   // no ACK by now => assume the frame was lost
 #define ACK_RETRIES                 2    // retransmits before giving up
@@ -298,5 +317,5 @@
 // Firmware identity, reported in /api/status and the Roku device-info.
 // Keep this in step with /VERSION and the git tag — the app compares it against
 // the latest GitHub release to tell you whether the unit is current.
-#define FW_VERSION "0.8.2-alpha"
+#define FW_VERSION "0.8.3-alpha"
 #define FW_REPO    "digunderground/titan-bridge"

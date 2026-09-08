@@ -683,3 +683,117 @@ in 16 ms. An unacknowledged power key provably did nothing, so the sequence now
 waits for that ACK, resends up to 3 times, and refuses to send `OK` into a
 dialog that was never raised. Verified non-regressing (ACK in 35 ms, first try);
 the retry path itself is **not yet exercised** and remains unproven.
+
+### 2026-09-07, later — 0.8.2 shipped with a power regression
+
+**The 0.8.2 release contains a bug.** Power-on from the hub did nothing:
+
+```
+[140.220] power on: HID power key
+[140.250] HID power (0x66)
+```
+
+It routed power over **HID**, which is not wired to the projector in the
+serial-only configuration, and then recorded "on" because a HID toggle assumes
+success.
+
+Chain: the poll was gated while the projector was believed off → no frames were
+ever received → `everFrame` stayed false → `hidPowerPath()` treats "the serial
+link has never spoken" as "use HID" → power silently left over the wrong
+channel.
+
+The poll gate was added to test the theory that the poll woke the projector.
+That theory was **disproven the same day** (the hub was re-asserting PowerOn),
+and the gate should have been removed when the real cause landed instead of
+being left in the build. Reverted; the fallback now logs itself instead of
+switching silently.
+
+**Process failure worth naming:** the release was tagged after verifying a
+power-*off*, without testing a full on/off cycle. Test the cycle before tagging.
+
+### 2026-09-07 — power-off solved: the confirm was missing
+
+`power` (`0x07 00`) raises a shutdown dialog. **That dialog must be confirmed
+with `OK` (`0x07 0D`). It does not time out into a shutdown.**
+
+Found by comparing two attempts in one capture, on firmware that sends no `OK`
+at all:
+
+```
+[57.683] TX 07 00   power     ← worked
+[60.084] TX 07 0D   ok        ← sent BY THE OPERATOR, 2.4 s later
+...
+[234.951] TX 07 00  power     ← failed, no OK followed
+```
+
+Byte-identical commands; the only difference was the operator's confirm. Their
+working procedure had a step nobody had written down.
+
+**Confirm delay is now 2500 ms**, measured from the successful attempt. The
+original 900 ms was a guess sitting on the edge of the dialog rendering — the
+best explanation for why power-off was *intermittent* from the very beginning
+rather than simply broken.
+
+### Everything that was tried instead, and why each was wrong
+
+| attempt | outcome |
+|---|---|
+| Verify-then-retry (original) | `probeAnswered()` always true, so it double-pressed power and turned the projector back on |
+| Remove `OK`, wait out the countdown | The countdown does not self-complete. Based on one unverified operator remark. |
+| `back` nudge before power | Failed 10/10. Added in the same build as the `OK` removal, so neither could be evaluated. |
+| `setting`+`back`+`back` OSD prelude | Worked once, failed once on identical fully-ACKed frames. A correlation, not a mechanism. |
+| ACK-wait + retransmit | Correct and kept — but it addressed frame loss, which was never the main failure. |
+
+**The lesson is not about the protocol.** Four rewrites chased a missing step in
+a procedure that was never fully written down, and two of them were built on a
+remark treated as a measurement.
+
+### 2026-09-07 — RESOLVED: power off is one command, and only one
+
+**Confirmed working: `power` (`0x07 00`), sent once, nothing after it.** The
+projector shuts down and stays down.
+
+Anything sent after the power key turns it back on. Operator's observation,
+which settled it: *"it turns off, then right back on again."* The `OK` lands on
+the next screen; a second power key is a second toggle.
+
+**Operator's rule, now binding (see docs/12-power-logic.md):**
+
+> Power on and power off send exactly ONE command each. If an action needs to do
+> more, that belongs in the hub's automation or in a macro. Macros are the only
+> thing that may send more than one command.
+
+#### What actually broke it, in order
+
+1. **2026-09-05, `0b1a4a0`** — removed the verify-then-retry from ACT_OFF. It
+   was double-pressing power and occasionally turning the projector back on,
+   which was real. But the retry had been masking that a single power key was
+   sometimes enough and sometimes not, and its removal is when off became
+   unreliable.
+2. **Unconditional belief guard on off** — reads a belief that the power key
+   itself mutates (`titanSendNamed` flips the assumed state on every send) and
+   that returns stale from NVS after every reboot. It suppressed legitimate
+   power-offs silently, before any frame was transmitted. The operator
+   identified this as a race; it is worse than a race.
+3. **Everything after that** — countdown-only, `OK` at 900 ms, `OK` at 2.5 s,
+   `back` nudge, OSD prelude, ACK-confirmed retries, swapping `wake` for the
+   power key — was built to explain failures caused by 1 and 2.
+
+#### Confounded conclusions that were stated as findings
+
+- **"`wake` poisons the projector."** The controlled test sent the power key
+  *alone*; the hub also sends `InputHDMI1` 1.4 s later. Two variables changed
+  and the wrong one was credited.
+- **"The countdown self-completes into shutdown."** Taken from one unverified
+  operator remark and used to justify two rewrites.
+- **"`OK` is required."** Inferred from a capture in which the operator pressed
+  OK manually. The confirm was never required; the *absence* of anything after
+  the power key was what mattered.
+
+#### The process failure
+
+`OK` was removed once, correctly, in the same build that added the `back` nudge.
+When that build failed, the nudge was blamed and `OK` was restored — the right
+change was reverted because two things were changed at once. That single mistake
+cost most of a day, and it is the reason "change one thing at a time" is now
+written into docs/12-power-logic.md as a rule rather than advice.

@@ -93,7 +93,7 @@ const char *titanBusyStr();                 // "" when idle
 // Idempotent, non-blocking. They queue a sequence that titanLoop() drives and
 // then verifies with a temperature probe, so "on" and "off" mean what they say
 // regardless of the state you started in.
-void titanPowerOn();
+void titanPowerOn(bool force = false);
 void titanPowerOff(bool force = false);
 void titanPowerToggle();
 

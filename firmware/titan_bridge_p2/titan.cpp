@@ -721,24 +721,33 @@ static bool powerDebounced() {
 
 static bool hidPowerPath() {
 #if HAS_HID
-  return titanKeyChannelHid() || !everFrame;
+  // The configured channel decides, full stop. This used to fall back to HID
+  // whenever the serial link "had never spoken", which coupled power routing to
+  // whether the liveness poll happened to be running — so silencing the poll
+  // silently sent power over an unwired HID channel and recorded success.
+  // Two unrelated things must not share a variable.
+  return titanKeyChannelHid();
 #else
   return false;
 #endif
 }
 
-void titanPowerOn() {
-  // Serial "on" is the documented wake command, which is IDEMPOTENT — waking an
-  // already-awake projector does nothing. So there is no reason to second-guess
-  // it, and every reason not to: our assumption cannot be verified, and
-  // suppressing on a stale belief turns a hub's PowerOn into silence.
+void titanPowerOn(bool force) {
+  // Turn the projector on the SAME WAY ITS OWN REMOTE DOES — with the power
+  // key — not with wake.
   //
-  // The HID path is a toggle (0x66), where "on" while already on switches the
-  // projector OFF. That one still has to be guarded.
-  const bool onIsIdempotent = !hidPowerPath();
-
-  if (titanUsbPowerKnown() && titanUsbAwake()) { tlog("power on: already on"); return; }
-  if (!onIsIdempotent && !powerObey && assumedKnown && assumedOn) {
+  // Measured 2026-09-07, and this was the whole two-day power saga: a projector
+  // woken by `wake` (0x09 "wakeup") will not power off afterwards. Not from
+  // serial, and not from the OEM remote either. Five consecutive power-offs
+  // failed after a wake; every power-off following a power-key or OEM-remote
+  // power-on succeeded, with byte-identical frames. Power-off was never broken.
+  // wake was poisoning it.
+  //
+  // The cost is that ON is now a toggle, exactly like OFF, so it needs the same
+  // guard. That is a fair trade for a projector that can actually be switched
+  // off, and it makes power symmetric: one key, one guard, both directions.
+  // wake is idempotent, so there is never a reason to suppress it in obey mode.
+  if (!force && !powerObey && assumedKnown && assumedOn) {
     tlog("power on: skipped, believed already on — resync in Settings if wrong");
     return;
   }
@@ -751,15 +760,7 @@ void titanPowerOn() {
     assumeAfterToggle(true);
     return;
   }
-#if USB_DEAD_IN_STANDBY
-  if (pwr == PWR_ASLEEP) {
-    tlog("power on refused: USB_DEAD_IN_STANDBY is set — use the smart plug "
-         "or HDMI-CEC path (plan §7)");
-    return;
-  }
-#endif
   if (act != ACT_NONE) { tlog("busy: %s", titanBusyStr()); return; }
-  if (pwr == PWR_AWAKE) { tlog("power on: already awake"); return; }
   act = ACT_ON; actStep = 0; actTries = 0; actAt = millis();
   tlog("power on: starting");
   evlogAdd("power ON requested");
@@ -784,7 +785,20 @@ void titanPowerOff(bool force) {
   // used to skip this check, which is what let a stale belief turn the
   // projector on. The worst case for a guarded off is "nothing happened"; for
   // an unguarded one it is "the projector switched on and stayed on".
-  if (!force && assumedKnown && !assumedOn) {
+  // Restored to the original condition. The unconditional guard was added to
+  // stop "off" toggling an already-off projector ON — a real bug — but it reads
+  // a belief that is mutated by the very command it guards (titanSendNamed
+  // flips the assumed state on every power key) and that comes back stale from
+  // NVS after every reboot. In practice it suppressed far more legitimate
+  // power-offs than it prevented bad ones, silently and before any frame went
+  // out.
+  //
+  // The two-cycle sequence is largely self-correcting anyway: sent to an
+  // already-off projector it presses power twice, on then off.
+  //
+  // In obey mode (the default) this never fires, which is the original
+  // behaviour. Choose "Skip if already there" in Settings to re-enable it.
+  if (!force && !powerObey && assumedKnown && !assumedOn) {
     tlog("power off: skipped, believed already off — press On then Off "
          "(on is a safe no-op), or resync in Settings");
     evlogAdd("power OFF suppressed (believed off)");
@@ -823,109 +837,35 @@ static void runAction() {
   if (act == ACT_NONE || (int32_t)(millis() - actAt) < 0) return;
 
   if (act == ACT_ON) {
-    switch (actStep) {
-      case 0:
-        if (pwr == PWR_AWAKE) { tlog("power on: confirmed awake"); act = ACT_NONE; return; }
-        actTries++;
-        titanSendNamed("wake");
-        actAt = millis() + WAKE_SETTLE_MS; actStep = 1;
-        break;
-      case 1:
-        sendProbe();
-        actAt = millis() + POLL_REPLY_TIMEOUT_MS; actStep = 2;
-        break;
-      case 2:
-#if TEMP_PROBE_INDICATES_POWER
-        if (probeAnswered()) { setPower(PWR_AWAKE); pollMisses = 0;
-                               tlog("power on: OK after %u attempt(s)", actTries);
-                               act = ACT_NONE; }
-        else if (actTries < WAKE_ATTEMPTS) { actStep = 0; actAt = millis(); }
-        else { tlog("power on: FAILED after %u attempts — projector is not "
-                    "answering. If its USB ports die in standby this is "
-                    "expected; see plan §7.", actTries);
-               setPower(PWR_ASLEEP); act = ACT_NONE; }
-#else
-        // Nothing can confirm this. Retrying would send wake again, which is
-        // harmless for "on" but pointless — record the intent and stop.
-        tlog("power on: wake sent (cannot be verified on this projector)");
-        assumeAfterToggle(true);
-        act = ACT_NONE;
-#endif
-        break;
-    }
+    // ONE COMMAND. See docs/12-power-logic.md — power on and power off each
+    // send exactly one frame and nothing else. Anything more belongs in the
+    // hub's automation or in a macro.
+    titanSendNamed("wake");
+    tlog("power on: wake sent (cannot be verified on this projector)");
+    assumeAfterToggle(true);
+    act = ACT_NONE;
     return;
   }
 
-  // ACT_OFF — the power key is not discrete. It raises a 15 s power-off
-  // countdown, and that countdown COMPLETES into a shutdown on its own; OK
-  // merely short-circuits it.
+  // ACT_OFF — send the power key. Nothing else. Ever.
   //
-  // We used to press OK 900 ms after the power key. Measured 2026-09-06: the
-  // dialog does not reliably exist that early, so the OK landed on nothing,
-  // the countdown then ran unattended, and whether the projector shut down was
-  // a race we did not know we were running. Worse, the bridge recorded "off"
-  // either way, so a lost race desynced the assumed state and — once off was
-  // guarded — silently suppressed every later attempt.
+  // The power key alone shuts the projector down. Anything sent afterwards
+  // turns it back on: the OK lands on the next screen, and a second power key
+  // is simply a second toggle. Observed directly 2026-09-07 — "it turns off,
+  // then right back on again".
   //
-  // Waiting the countdown out is slower and completely deterministic. 15 s is
-  // not worth a race condition.
+  // Do not add a confirm, a retry, a verification probe, or a second cycle.
+  // Every one of those has been tried and every one made this worse:
+  //   * verify-then-retry  -> double toggle, projector comes back on
+  //   * OK after 900 ms    -> lands after the shutdown, wakes it
+  //   * back / OSD prelude -> no effect, or worse
+  //   * countdown wait     -> harmless but pointless
   switch (actStep) {
     case 0:
-      if (pwr == PWR_ASLEEP) { tlog("power off: confirmed asleep"); act = ACT_NONE; return; }
-      actTries++;
       titanSendNamed("power");
-      tlog("power off: power key sent (try %u, awake %lu s)", actTries,
-           lastWakeAt ? (unsigned long)((millis() - lastWakeAt) / 1000) : 0UL);
-      actAt = millis() + POWEROFF_ACK_WAIT_MS; actStep = 1;
-      break;
-
-    case 1:
-      // Measured 2026-09-07: the power key is sometimes not acknowledged at
-      // all, while an OK sent 900 ms later on the same wire is acknowledged in
-      // 16 ms — so this is the projector refusing that specific frame, not a
-      // sick link. And because the OK then confirmed nothing and the projector
-      // stayed on, an unacknowledged power key provably did NOT take effect.
-      // That is what makes resending it safe: there is no countdown standing
-      // that a second press could cancel.
-      if (!ackedParam(0x07, 0x00, POWEROFF_ACK_WAIT_MS + 200)) {
-        if (actTries < POWEROFF_TRIES) {
-          tlog("power off: power key NOT acknowledged — resending");
-          actStep = 0; actAt = millis();
-          break;
-        }
-        tlog("power off: power key never acknowledged after %u tries — giving up",
-             actTries);
-        evlogAdd("power OFF failed: power key unacked x%u", actTries);
-        act = ACT_NONE;                     // no OK: there is no dialog to confirm
-        return;
-      }
-      actAt = millis() + POWEROFF_CONFIRM_MS; actStep = 2;
-      break;
-
-    case 2:
-      titanSendNamed("ok");                 // accept the confirmation dialog
-      tlog("power off: OK sent to confirm");
-      actAt = millis() + POWEROFF_SETTLE_MS; actStep = 3;
-      break;
-
-    case 3:
-#if TEMP_PROBE_INDICATES_POWER
-      if (!probeAnswered()) { setPower(PWR_ASLEEP); pollMisses = POLL_MISSES_TO_SLEEP;
-                              tlog("power off: OK"); act = ACT_NONE; }
-      else if (actTries < 2) { tlog("power off: still awake, retrying");
-                               actStep = 0; actAt = millis(); }
-      else { tlog("power off: FAILED — the countdown did not complete; "
-                  "tune POWEROFF_COUNTDOWN_MS");
-             setPower(PWR_AWAKE); act = ACT_NONE; }
-#else
-      // This retry was actively harmful. probeAnswered() is always true here —
-      // the projector answers the temperature probe in standby — so a
-      // successful power-off looked like "still awake", the sequence pressed
-      // power a second time, and the projector came straight back on.
-      tlog("power off: sent (cannot be verified on this projector)");
+      tlog("power off: power key sent");
       assumeAfterToggle(false);
       act = ACT_NONE;
-#endif
       break;
   }
 }
