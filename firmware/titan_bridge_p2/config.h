@@ -154,6 +154,34 @@
 // 2026-09-06. We wait it out rather than racing to confirm; see titan.cpp.
 #define POWEROFF_COUNTDOWN_MS 16000UL   // 15 s dialog + margin
 
+// Frames ARE lost on this link. Measured 2026-09-06: a power key went out and
+// the projector neither acknowledged it nor acted on it, while the setting,
+// back and hdmi1 frames on either side of it were acknowledged in ~30 ms. An
+// identical retransmit worked immediately.
+//
+// Because the projector did not act, the loss was outbound, so a retransmit
+// cannot double-execute the command. ACKs arrive in 15-30 ms, so 250 ms is
+// ~10x the observed latency: a silence that long means the frame is gone, not
+// slow.
+// Restored 2026-09-07. The original power -> 900 ms -> OK sequence was reported
+// working ("works perfectly") on day one. It was replaced with a countdown-only
+// wait, then a back-key nudge, on theories that were never measured against
+// that baseline — and power-off went to failing 10/10. Change one thing at a
+// time, against a known-good.
+#define POWEROFF_ACK_WAIT_MS     400UL   // wait for the power key's ACK before trusting it
+#define POWEROFF_TRIES              3    // power-key attempts before giving up
+#define POWEROFF_CONFIRM_MS      900UL   // power key -> confirmation dialog -> OK
+#define POWEROFF_SETTLE_MS      6000UL   // after OK, before assuming it took
+
+// Do not poll a projector we believe is OFF. The 10 s temperature probe is the
+// only thing this bridge sends unprompted, it is excluded from the log, and it
+// keeps running all night into a sleeping projector. Spontaneous power-ons were
+// reported to follow shutdowns regardless of how the projector was turned off —
+// and the poll is the one variable common to every one of those cases.
+#define POLL_WHEN_BELIEVED_OFF     0
+#define ACK_TIMEOUT_MS           250UL   // no ACK by now => assume the frame was lost
+#define ACK_RETRIES                 2    // retransmits before giving up
+
 // The HID power key is a toggle, so two presses in quick succession would undo
 // each other. One intent, one toggle.
 #define POWER_DEBOUNCE_MS      4000UL   // wait after off before re-testing
@@ -227,6 +255,17 @@
 // ssdp:alive finds us regardless, and 10 s of a ~200 byte datagram is nothing.
 #define SSDP_NOTIFY_INTERVAL_MS 10000UL
 
+// Announcing every 10 s forever is the second of only two things this bridge
+// emits unprompted. A hub needs the announcements while it is SCANNING and not
+// afterwards, so they now run for a window — after boot, or when "Announce" is
+// pressed in Settings — and then stop. M-SEARCH is still answered at any time,
+// which costs nothing because it only happens when someone asks.
+#define SSDP_WINDOW_MS       180000UL   // 3 min of announcing, then silence
+
+// How long after boot a power command arriving over ECP is treated as the hub
+// re-asserting state rather than a person pressing a button. See ecpKey().
+#define ECP_POWER_GRACE_MS     45000UL
+
 // --------------------------------------------------------------------------
 // IR receive. Set to 0 if Day 1 Test 6 found no receiver and you never wired
 // a TSOP38238 — the pin then stays free.
@@ -249,8 +288,15 @@
 #define LOG_POLL_TRAFFIC           0
 #define LOG_LINE_MAX              96
 
+// Persistent event log. The in-RAM ring above is lost on every reboot — which
+// is exactly how the evidence for an overnight power-loss event disappeared on
+// 2026-09-06/07. This one lives in NVS and survives both reboots and power
+// cuts. Only significant events go in it (boot with its reset reason, power
+// commands, lost frames), so NVS wear stays negligible.
+#define EVLOG_MAX               1200
+
 // Firmware identity, reported in /api/status and the Roku device-info.
 // Keep this in step with /VERSION and the git tag — the app compares it against
 // the latest GitHub release to tell you whether the unit is current.
-#define FW_VERSION "0.8.1-alpha"
+#define FW_VERSION "0.8.2-alpha"
 #define FW_REPO    "digunderground/titan-bridge"

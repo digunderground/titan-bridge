@@ -148,7 +148,6 @@ nav button.on{color:var(--ac2)}
     <div class=pwrrow>
       <div class=pwritem><button class="circ pwr" onclick="go('/api/power?state=off')">⏻</button><span class=clab>Off</span></div>
       <div class=pwritem><button class="circ wake" onclick="go('/api/power?state=on')">☀</button><span class=clab>Wake</span></div>
-      <div class=pwritem><button class=circ onclick="runAct('s:blank')">▤</button><span class=clab>Blank</span></div>
       <div class=pwritem><button class=circ onclick="go('/api/nav?name=mute')">🔇</button><span class=clab>Mute</span></div>
       <div class=pwritem><button class=circ onclick="go('/api/nav?name=menu')">☰</button><span class=clab>Menu</span></div>
       <div class=pwritem><button class=circ onclick="go('/api/nav?name=back')">↩</button><span class=clab>Back</span></div>
@@ -368,7 +367,6 @@ const SEGS={
            ['🌈','Vivid','s:vivid'],['⚡','Perf','s:perf'],['🏈','Sport','s:sport'],
            ['📻','TV','s:tvmode']],
   display:[['🔅','Bright 3','s:b3'],['🔆','Bright 7','s:b7'],['☀','Bright 10','s:b10'],
-           ['▤','Blank','s:blank'],['▣','Unblank','s:unblank'],
            ['🐢','HRR off','s:hrroff'],['🚶','HRR basic','s:hrrbasic'],['🏃','HRR max','s:hrrmax'],
            ['🧪','Calibration','r:2A2A0207060F']],
   mine:[]
@@ -574,8 +572,7 @@ const BUILTIN_ACTIONS=[
   ['Sound & lens',[['k:volup','Volume +'],['k:voldn','Volume −'],['s:mute','Mute'],
                    ['h:focus+','Focus +'],['h:focus-','Focus −'],['s:autofocus','Autofocus']]],
   ['Inputs',[['s:hdmi1','HDMI1'],['s:hdmi2','HDMI2'],['s:hdmi3','HDMI3'],['s:usbsrc','USB']]],
-  ['Picture',[['s:filmmaker','Filmmaker'],['s:movie','Movie'],['s:vivid','Vivid'],
-              ['s:blank','Blank'],['s:unblank','Unblank']]]
+  ['Picture',[['s:filmmaker','Filmmaker'],['s:movie','Movie'],['s:vivid','Vivid']]]
 ];
 
 /* The check runs in the browser, not on the bridge. GitHub sends permissive

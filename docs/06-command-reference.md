@@ -191,11 +191,22 @@ The **power key is a toggle, not a discrete off.** Measured 2026-09-06: it
 raises a **15-second power-off countdown**, and that countdown **completes into
 a shutdown on its own**. `OK` only short-circuits it.
 
-The bridge used to press `OK` 900 ms after the power key. The dialog does not
-reliably exist that early, so the `OK` landed on nothing and whether the
-projector shut down became a race — and the bridge recorded "off" either way,
-so a lost race desynced the assumed state. Power-off is now a single press
-followed by waiting the countdown out: slower, and deterministic.
+**The power key is sometimes not acknowledged at all**, while an `OK` sent
+900 ms later on the same wire is acknowledged in 16 ms — so it is the projector
+refusing that specific frame, not a sick link. When that happens the key has
+provably had no effect: the `OK` then confirms nothing and the projector stays
+on. That is what makes resending it safe — there is no countdown standing that a
+second press could cancel.
+
+Power-off therefore **waits for the power key's own ACK** before sending `OK`,
+resends the power key up to 3 times if the ACK does not arrive, and gives up
+without sending `OK` rather than confirming a dialog that was never raised.
+
+Two earlier attempts are recorded here as warnings. Waiting out the 15 s
+countdown instead of confirming was deterministic but slower, and dropping a
+`back` keypress in front of the power key — on a correlation from seven samples —
+took power-off from intermittent to failing 10/10. Both replaced a working
+sequence without measuring against it.
 
 Because the key is a toggle, sending it to an **already-off** projector turns it
 **on**. That is why a hub's "Power off" button could wake the unit. The bridge

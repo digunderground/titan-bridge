@@ -2,6 +2,7 @@
 #include <strings.h>
 #include <stdarg.h>
 #include <Preferences.h>
+#include <esp_system.h>
 #include "titan.h"
 #include "macros.h"
 
@@ -104,6 +105,9 @@ const Cmd CMDS[] = {
 
   { "wake",      0x09, 6, {0x77, 0x61, 0x6B, 0x65, 0x75, 0x70} },  // "wakeup"
 
+  // Kept reachable by name (macros, /api/cmd, raw) but deliberately NOT
+  // surfaced in the app or the hub key map: tested 2026-09-07 and judged not
+  // worth a button on this projector. Documented in docs/06-command-reference.md.
   { "blank",     0x0D, 1, {0x00} },
   { "unblank",   0x0D, 1, {0x01} },
 
@@ -189,12 +193,26 @@ static bool     everFrame= false;   // a checksum-valid frame — the real signa
 static uint32_t lastFrameAt = 0;    // millis of the last valid frame
 static bool     inPoll = false;     // routine liveness poll, not a user action
 static uint8_t  lastAckInstr = 0;   // last acknowledged instruction
+static uint8_t  lastAckP0    = 0;   // ...and its first parameter
 static uint32_t lastAckAt = 0;      // millis of that ACK
 static int8_t   lastTemp = -1;
 static char     lastRxHex[52] = "-";
 
 static PowerState pwr = PWR_UNKNOWN;
 static bool       assumedOn = false, assumedKnown = false;
+// When the last wake went out, so a failed power-off can be correlated with
+// how long the projector had been booting. 0 = no wake seen this session.
+static uint32_t   lastWakeAt = 0;
+
+// Outbound frames are occasionally lost (see ACK_TIMEOUT_MS in config.h). The
+// ACK is worthless as proof of effect but it IS proof of receipt, so it is
+// exactly the right signal to retransmit on. One frame is held here until its
+// ACK comes back or the retries run out.
+static uint8_t    pendBuf[16];
+static uint8_t    pendLen   = 0;      // 0 = nothing outstanding
+static uint8_t    pendInstr = 0, pendP0 = 0;
+static uint32_t   pendAt    = 0;
+static uint8_t    pendTries = 0;
 static void       assumeAfterToggle(bool nowOn);   // defined with the power section
 static uint8_t    pollMisses = 0;
 
@@ -264,6 +282,24 @@ void titanSendCmd(uint8_t instr, const uint8_t *params, uint8_t nparams) {
   linkWrite(buf, i);
   txFrames++;
 
+  // Arm retransmission. The 10 s liveness poll is excluded: it repeats on its
+  // own, and retrying it would only double the quietest traffic on the link.
+  // Retransmit only ABSOLUTE-STATE commands. 0x07 is key simulation, so a
+  // repeat is a second physical key press, not a duplicate of the same
+  // request -- and for the power key that cancels the shutdown countdown the
+  // first press raised. The earlier reasoning here ("no ACK means the command
+  // was lost, so a retry is free") only held for the one loss we happened to
+  // observe; a lost ACK on a received command is just as possible, and turns
+  // the retry into a double press. 0x13 is the poll, which repeats anyway.
+  if (instr != 0x13 && instr != 0x07) {
+    memcpy(pendBuf, buf, i);
+    pendLen   = i;
+    pendInstr = instr;
+    pendP0    = nparams ? params[0] : 0;
+    pendAt    = millis();
+    pendTries = 0;
+  }
+
   char hex[48]; int p = 0;
   for (uint8_t k = 0; k < i && p < (int)sizeof(hex) - 3; k++)
     p += snprintf(hex + p, sizeof(hex) - p, "%02X ", buf[k]);
@@ -289,7 +325,7 @@ bool titanSendNamed(const char *name) {
   // through. Sending "wake" via /api/cmd bypasses the power state machine, so
   // the projector woke while the bridge went on believing it was off — the
   // same hole /api/hidraw opened when it fired the HID power key directly.
-  if (c->instr == 0x09) assumeAfterToggle(true);          // wake — discrete on
+  if (c->instr == 0x09) { assumeAfterToggle(true); lastWakeAt = millis(); }  // wake — discrete on
   // The power key is a toggle wherever it comes from, including a raw macro
   // step or a remapped hub button. Tracking it here keeps the assumed state
   // closer to reality than only watching titanPowerOn/Off did.
@@ -337,6 +373,14 @@ bool        titanLinkEverRx()    { return everFrame; }
 
 // Was the given instruction acknowledged within the last `withinMs`? The
 // absence of an ACK is how an unsupported command announces itself.
+// Was this exact instruction+parameter acknowledged recently? 0x07 covers every
+// simulated key, so matching the instruction alone would let the OK's ACK stand
+// in for the power key's.
+static bool ackedParam(uint8_t instr, uint8_t p0, uint32_t withinMs) {
+  return lastAckAt && lastAckInstr == (instr & 0x7F) && lastAckP0 == p0 &&
+         (millis() - lastAckAt) <= withinMs;
+}
+
 bool titanAcked(uint8_t instr, uint32_t withinMs) {
   return lastAckAt && (lastAckInstr == (instr & 0x7F)) &&
          (millis() - lastAckAt) <= withinMs;
@@ -524,7 +568,9 @@ static void frameComplete(const uint8_t *f, uint8_t n) {
     for (size_t i = 0; i < NCMDS; i++)
       if (CMDS[i].instr == instr && CMDS[i].p[0] == f[4]) { nm = CMDS[i].name; break; }
     lastAckInstr = instr;
+    lastAckP0    = f[4];
     lastAckAt    = millis();
+    if (pendLen && instr == pendInstr && f[4] == pendP0) pendLen = 0;  // delivered
     tlog("ACK %s instr=0x%02X %s", hex, instr, nm);
     return;
   }
@@ -716,6 +762,7 @@ void titanPowerOn() {
   if (pwr == PWR_AWAKE) { tlog("power on: already awake"); return; }
   act = ACT_ON; actStep = 0; actTries = 0; actAt = millis();
   tlog("power on: starting");
+  evlogAdd("power ON requested");
 }
 
 void titanPowerOff(bool force) {
@@ -740,6 +787,7 @@ void titanPowerOff(bool force) {
   if (!force && assumedKnown && !assumedOn) {
     tlog("power off: skipped, believed already off — press On then Off "
          "(on is a safe no-op), or resync in Settings");
+    evlogAdd("power OFF suppressed (believed off)");
     return;
   }
   if (powerDebounced()) return;
@@ -755,6 +803,7 @@ void titanPowerOff(bool force) {
   if (pwr == PWR_ASLEEP) { tlog("power off: already asleep"); return; }
   act = ACT_OFF; actStep = 0; actTries = 0; actAt = millis();
   tlog("power off: starting");
+  evlogAdd("power OFF requested");
 }
 
 void titanPowerToggle() {
@@ -825,11 +874,41 @@ static void runAction() {
       if (pwr == PWR_ASLEEP) { tlog("power off: confirmed asleep"); act = ACT_NONE; return; }
       actTries++;
       titanSendNamed("power");
-      tlog("power off: countdown started, ~%lu s to shutdown",
-           (unsigned long)(POWEROFF_COUNTDOWN_MS / 1000));
-      actAt = millis() + POWEROFF_COUNTDOWN_MS; actStep = 1;
+      tlog("power off: power key sent (try %u, awake %lu s)", actTries,
+           lastWakeAt ? (unsigned long)((millis() - lastWakeAt) / 1000) : 0UL);
+      actAt = millis() + POWEROFF_ACK_WAIT_MS; actStep = 1;
       break;
+
     case 1:
+      // Measured 2026-09-07: the power key is sometimes not acknowledged at
+      // all, while an OK sent 900 ms later on the same wire is acknowledged in
+      // 16 ms — so this is the projector refusing that specific frame, not a
+      // sick link. And because the OK then confirmed nothing and the projector
+      // stayed on, an unacknowledged power key provably did NOT take effect.
+      // That is what makes resending it safe: there is no countdown standing
+      // that a second press could cancel.
+      if (!ackedParam(0x07, 0x00, POWEROFF_ACK_WAIT_MS + 200)) {
+        if (actTries < POWEROFF_TRIES) {
+          tlog("power off: power key NOT acknowledged — resending");
+          actStep = 0; actAt = millis();
+          break;
+        }
+        tlog("power off: power key never acknowledged after %u tries — giving up",
+             actTries);
+        evlogAdd("power OFF failed: power key unacked x%u", actTries);
+        act = ACT_NONE;                     // no OK: there is no dialog to confirm
+        return;
+      }
+      actAt = millis() + POWEROFF_CONFIRM_MS; actStep = 2;
+      break;
+
+    case 2:
+      titanSendNamed("ok");                 // accept the confirmation dialog
+      tlog("power off: OK sent to confirm");
+      actAt = millis() + POWEROFF_SETTLE_MS; actStep = 3;
+      break;
+
+    case 3:
 #if TEMP_PROBE_INDICATES_POWER
       if (!probeAnswered()) { setPower(PWR_ASLEEP); pollMisses = POLL_MISSES_TO_SLEEP;
                               tlog("power off: OK"); act = ACT_NONE; }
@@ -843,7 +922,7 @@ static void runAction() {
       // the projector answers the temperature probe in standby — so a
       // successful power-off looked like "still awake", the sequence pressed
       // power a second time, and the projector came straight back on.
-      tlog("power off: countdown elapsed (cannot be verified on this projector)");
+      tlog("power off: sent (cannot be verified on this projector)");
       assumeAfterToggle(false);
       act = ACT_NONE;
 #endif
@@ -882,13 +961,93 @@ static void runPoll() {
 
   if ((int32_t)(millis() - pollAt) >= 0) {
     pollAt = millis() + POLL_INTERVAL_MS;
+#if !POLL_WHEN_BELIEVED_OFF
+    // The poll is the only thing the bridge sends unprompted, and it is
+    // excluded from the log — which is why "nothing was sent" readings of the
+    // log were wrong: the polls were the only traffic there was. Suspect in
+    // the spontaneous power-ons, so it stops while we believe the projector
+    // is off. It buys us nothing there anyway: the projector answers the probe
+    // identically in standby (TEMP_PROBE_INDICATES_POWER 0).
+    if (assumedKnown && !assumedOn) return;
+#endif
     sendProbe();
   }
 }
 
 // ================================ lifecycle ================================
 
+// ===================== persistent event log (NVS) ===========================
+//
+// The RAM ring buffer above dies with the board. On 2026-09-06 the ESP32 lost
+// power overnight and every trace of what happened went with it — including
+// whether the projector had rebooted, which was the whole question. This log
+// survives power loss, and records WHY the board restarted, which is what
+// separates "the USB rail died" from "the firmware crashed".
+
+static uint32_t bootNum = 0;
+
+uint32_t evlogBootNum() { return bootNum; }
+
+static const char *resetReasonStr() {
+  switch (esp_reset_reason()) {
+    case ESP_RST_POWERON:  return "power-on";     // the rail was cut
+    case ESP_RST_EXT:      return "ext-reset";
+    case ESP_RST_SW:       return "sw-reset";     // our own ESP.restart / OTA
+    case ESP_RST_PANIC:    return "PANIC";
+    case ESP_RST_INT_WDT:  return "int-watchdog";
+    case ESP_RST_TASK_WDT: return "task-watchdog";
+    case ESP_RST_WDT:      return "watchdog";
+    case ESP_RST_BROWNOUT: return "BROWNOUT";     // marginal supply
+    case ESP_RST_DEEPSLEEP:return "deep-sleep";
+    default:               return "unknown";
+  }
+}
+
+void evlogAdd(const char *fmt, ...) {
+  char msg[72];
+  va_list ap; va_start(ap, fmt);
+  vsnprintf(msg, sizeof(msg), fmt, ap);
+  va_end(ap);
+
+  char line[110];
+  snprintf(line, sizeof(line), "b%lu+%lus %s\n",
+           (unsigned long)bootNum, (unsigned long)(millis() / 1000), msg);
+
+  Preferences p;
+  if (!p.begin("titan", false)) return;
+  String s = p.getString("evlog", "");
+  s += line;
+  while (s.length() > EVLOG_MAX) {           // drop whole lines from the front
+    int nl = s.indexOf('\n');
+    if (nl < 0) { s = ""; break; }
+    s.remove(0, nl + 1);
+  }
+  p.putString("evlog", s);
+  p.end();
+}
+
+String evlogDump() {
+  Preferences p;
+  if (!p.begin("titan", true)) return String();
+  String s = p.getString("evlog", "");
+  p.end();
+  return s;
+}
+
+static void evlogBegin() {
+  Preferences p;
+  if (p.begin("titan", false)) {
+    bootNum = p.getUInt("boots", 0) + 1;
+    p.putUInt("boots", bootNum);
+    p.end();
+  }
+  // A "power-on" reset here with no OTA beforehand means the supply went away,
+  // which on this rig means the projector's USB port stopped delivering power.
+  evlogAdd("boot #%lu reset=%s", (unsigned long)bootNum, resetReasonStr());
+}
+
 void titanBegin() {
+  evlogBegin();
   keyChannelBegin();
   assumeBegin();
   powerModeBegin();
@@ -949,6 +1108,28 @@ void titanLoop() {
     if (want != pwr) setPower(want);
   }
 #endif
+  // Retransmit a frame the projector never acknowledged. Measured: outbound
+  // frames are occasionally dropped, and the loss is silent — the command
+  // simply does not happen. That is what made power-off intermittent for days
+  // and sent us chasing boot timing, dialog races and UI state.
+  if (pendLen && (millis() - pendAt) > ACK_TIMEOUT_MS) {
+    if (pendTries < ACK_RETRIES) {
+      pendTries++;
+      linkWrite(pendBuf, pendLen);
+      txFrames++;
+      tlog("no ACK for 0x%02X %02X after %lu ms — resending (try %u/%u)",
+           pendInstr, pendP0, (unsigned long)ACK_TIMEOUT_MS,
+           pendTries, (unsigned)ACK_RETRIES);
+      pendAt = millis();
+    } else {
+      tlog("LOST: 0x%02X %02X never acknowledged after %u retries",
+           pendInstr, pendP0, (unsigned)ACK_RETRIES);
+      evlogAdd("LOST 0x%02X %02X after %u retries", pendInstr, pendP0,
+               (unsigned)ACK_RETRIES);
+      pendLen = 0;
+    }
+  }
+
   // a partial frame that stops arriving is abandoned, not left to poison
   // the next one
   if (frLen && (millis() - frLast > 120)) frLen = 0;

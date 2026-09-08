@@ -639,3 +639,47 @@ This is the **fifth** independent demonstration that an ACK proves receipt and
 nothing else — and it also refutes, for this instruction, the parameter-echo
 idea that the mapping plan lists as its most promising camera-free experiment:
 one working command and four dead ones are byte-identical in the reply.
+
+## 2026-09-07 — the spontaneous power-ons were the SofaBaton
+
+Captured at last, because the persistent event log survived the reboot that had
+erased every previous attempt:
+
+```
+[18.279] ECP /keypress/PowerOn <- 10.0.0.118
+[18.290] TX 2A 2A 07 09 77 61 6B 65 75 70 9D
+```
+
+Sixteen seconds after the bridge joined Wi-Fi, nobody touching anything. The
+bridge announces `ssdp:alive` on boot; the hub sees its "Roku" reappear and
+re-asserts the power state it believes the device should be in.
+
+Fixed by making SSDP announcing opt-in and ignoring ECP power commands for 45 s
+after boot. A following boot showed **zero** hub traffic past 60 s, where the
+previous boot had `PowerOn` at 18 s.
+
+### Retractions this cost
+
+- **"Nothing was sent, tx is exactly one poll per 10 s."** The polls were the
+  only traffic *and* the only thing excluded from the log. Silence in that log
+  was never evidence of anything.
+- **"USB re-enumeration is ruled out."** Tested with a soft reset, which keeps
+  VBUS up — not the same event as a cold attach. Stated far more confidently
+  than the test supported.
+- **"The last flash bricked the board."** Boot #4 wrote its own event entry, so
+  it booted fine and simply never reached the LAN. The USB recovery flash was
+  unnecessary.
+
+### Power-off, and two self-inflicted regressions
+
+The day-one sequence — `power`, 900 ms, `OK` — was reported working. It was then
+replaced twice without measuring against that baseline: first by waiting out the
+15 s countdown, then by prefixing a `back` keypress on a seven-sample
+correlation. The second took power-off from intermittent to failing 10/10.
+
+Restored, then improved with evidence rather than theory: the power key is
+sometimes **not acknowledged at all** while an `OK` 900 ms later is acknowledged
+in 16 ms. An unacknowledged power key provably did nothing, so the sequence now
+waits for that ACK, resends up to 3 times, and refuses to send `OK` into a
+dialog that was never raised. Verified non-regressing (ACK in 35 ms, first try);
+the retry path itself is **not yet exercised** and remains unproven.

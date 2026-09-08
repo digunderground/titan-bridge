@@ -97,5 +97,12 @@ void titanPowerOn();
 void titanPowerOff(bool force = false);
 void titanPowerToggle();
 
+// Persistent, reboot-surviving event log (NVS). Use it only for things worth
+// knowing after the fact — boots, power commands, lost frames — never per-frame
+// traffic.
+void   evlogAdd(const char *fmt, ...);
+String evlogDump();
+uint32_t evlogBootNum();
+
 // Last thing the projector told us, for the UI.
 const char *titanLastRxHex();

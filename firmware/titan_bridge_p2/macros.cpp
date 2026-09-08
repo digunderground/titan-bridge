@@ -15,10 +15,10 @@ struct BuiltIn { const char *name; const char *desc; const char *script; };
 
 static const BuiltIn BUILTINS[] = {
   { "movie",   "power on, HDMI1, Filmmaker, brightness 7",
-    "p:on; d1500; s:hdmi1; d600; s:filmmaker; d400; s:b7; s:unblank" },
+    "p:on; d1500; s:hdmi1; d600; s:filmmaker; d400; s:b7" },
 
   { "bright",  "power on, HDMI1, Vivid, brightness 10 (daytime)",
-    "p:on; d1500; s:hdmi1; d600; s:vivid; d400; s:b10; s:unblank" },
+    "p:on; d1500; s:hdmi1; d600; s:vivid; d400; s:b10" },
 
   { "game",    "HDMI2, Performance, high refresh extreme",
     "s:hdmi2; d600; s:perf; d400; s:hrrmax" },

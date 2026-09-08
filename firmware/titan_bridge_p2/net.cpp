@@ -83,6 +83,10 @@ void netBegin() {
 
   if (WiFi.status() != WL_CONNECTED) {
     tlog("Wi-Fi: no join in 20 s — starting setup AP instead");
+  // Recorded persistently: a board that boots but never reaches the LAN looks
+  // identical from outside to one that never booted at all. On 2026-09-07 that
+  // ambiguity cost a USB recovery flash that may not have been needed.
+  evlogAdd("Wi-Fi FAILED to join - setup AP started");
     startAp();
     return;
   }
@@ -94,6 +98,7 @@ void netBegin() {
   WiFi.setSleep(false);
 
   tlog("Wi-Fi: %s  rssi %d dBm", WiFi.localIP().toString().c_str(), WiFi.RSSI());
+  evlogAdd("Wi-Fi up %s rssi %d", WiFi.localIP().toString().c_str(), WiFi.RSSI());
   if (MDNS.begin(MDNS_HOST)) {
     MDNS.addService("http", "tcp", UI_PORT);
     tlog("mDNS: http://%s.local/", MDNS_HOST);

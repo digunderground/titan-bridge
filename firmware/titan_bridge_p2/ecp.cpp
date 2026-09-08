@@ -24,6 +24,9 @@ static WiFiUDP   ssdpUni;    // unicast M-SEARCH straight at our IP
 
 static void ssdpNotify();    // defined with the SSDP section, below
 static uint32_t  notifyAt = 0;
+// While non-zero, unsolicited ssdp:alive announcements are running and this
+// is when they stop. Re-armed by /api/announce.
+static uint32_t  ssdpWindowEnd = 0;
 static char      serialNo[16];
 static char      deviceId[16];
 
@@ -192,11 +195,31 @@ static String ecpMapJson() {
   return out;
 }
 
+// A power command from the hub in the first seconds of uptime is the hub
+// re-asserting state at a device it has just re-discovered, not a person
+// pressing a button. Measured: PowerOn arrived 16 s after the bridge joined
+// Wi-Fi and turned the projector on. Refuse those; the app's own power buttons
+// are unaffected, since they do not come through here.
+static bool ecpPowerBlocked(const char *action) {
+  if (!action || strncasecmp(action, "p:", 2) != 0) return false;
+  if (millis() > ECP_POWER_GRACE_MS) return false;
+  tlog("ECP '%s' ignored — within %lu s of boot (hub re-asserting state)",
+       action, (unsigned long)(ECP_POWER_GRACE_MS / 1000));
+  evlogAdd("ECP %s ignored (boot grace)", action);
+  return true;
+}
+
 static bool ecpKey(const char *key) {
   String ov = ecpOverrideFor(key);
-  if (ov.length()) return runAction(ov.c_str());
+  if (ov.length()) {
+    if (ecpPowerBlocked(ov.c_str())) return true;
+    return runAction(ov.c_str());
+  }
   for (size_t i = 0; i < NECPMAP; i++)
-    if (!strcasecmp(key, ECPMAP[i].key)) return runAction(ECPMAP[i].action);
+    if (!strcasecmp(key, ECPMAP[i].key)) {
+      if (ecpPowerBlocked(ECPMAP[i].action)) return true;
+      return runAction(ECPMAP[i].action);
+    }
   tlog("ECP key '%s' is not mapped", key);
   return false;
 }
@@ -298,6 +321,8 @@ static void uiRoutes() {
     okJson(ui, statusJson());
   });
   ui.on("/api/log",    HTTP_ANY, []() { cors(ui); ui.send(200, "text/plain", logDump()); });
+  // Survives reboots and power loss, unlike /api/log.
+  ui.on("/api/events", HTTP_ANY, []() { cors(ui); ui.send(200, "text/plain", evlogDump()); });
   ui.on("/api/macros", HTTP_ANY, []() { okJson(ui, macroListJson()); });
   ui.on("/api/irmaps", HTTP_ANY, []() { okJson(ui, irMapJson()); });
 
@@ -446,7 +471,10 @@ static void uiRoutes() {
     // Fire a burst before starting a hub scan, for clients that listen for
     // ssdp:alive rather than sending their own search.
     for (int i = 0; i < 6; i++) { ssdpNotify(); delay(120); }
-    tlog("SSDP: announced 6x on request");
+    ssdpWindowEnd = millis() + SSDP_WINDOW_MS;      // re-open the window
+    notifyAt      = millis() + SSDP_NOTIFY_INTERVAL_MS;
+    tlog("SSDP: announced 6x, discovery window open for %lu s",
+         (unsigned long)(SSDP_WINDOW_MS / 1000));
     okText(ui, "announced");
   });
   ui.on("/api/reboot", HTTP_ANY, []() { okText(ui, "rebooting"); delay(200); ESP.restart(); });
@@ -708,6 +736,14 @@ static void ssdpLoop() {
   ssdpHandle(ssdpRx,  ssdpRx.parsePacket());
   ssdpHandle(ssdpUni, ssdpUni.parsePacket());
 
+  // Outside the discovery window the bridge stays quiet. It still answers
+  // M-SEARCH — that is passive and only costs a packet when something asks.
+  if (ssdpWindowEnd && (int32_t)(millis() - ssdpWindowEnd) >= 0) {
+    ssdpWindowEnd = 0;
+    tlog("SSDP: discovery window closed — announcing stopped");
+  }
+  if (!ssdpWindowEnd) return;
+
   if ((int32_t)(millis() - notifyAt) >= 0) {
     notifyAt = millis() + SSDP_NOTIFY_INTERVAL_MS;
     // Re-join the group before announcing. Multicast membership on this stack
@@ -745,6 +781,13 @@ void ecpBegin() {
     // multicasting. beginMulticast() alone does not deliver those.
     ssdpUni.begin(1900);
     notifyAt = millis() + 3000;
+    // Deliberately NOT announcing on boot. Measured 2026-09-07: the bridge came
+    // up, announced ssdp:alive, and 16 s later the SofaBaton sent an unsolicited
+    // /keypress/PowerOn that woke the projector — no human involved. The hub
+    // re-asserts its expected power state whenever it re-discovers the device,
+    // so every reboot or Wi-Fi flap was turning the projector on. Announcing is
+    // now opt-in from Settings, for when you are actually pairing a hub.
+    ssdpWindowEnd = 0;
   }
   tlog("Roku ECP on http://%s:%d/ (serial %s)", netIp().c_str(), ECP_PORT, serialNo);
 #endif
