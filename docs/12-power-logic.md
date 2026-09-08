@@ -33,12 +33,43 @@ verbatim, identical to the working `wakeup`, and none does anything.
 
 ## THE RULE
 
-**Power on and power off send exactly ONE command each. Nothing else. Ever.**
+**Power on and power off send ONLY power keys. Nothing else. Ever.**
 
-| action | frame | and then |
+On sends one. Off sends two, 2 s apart — the one agreed exception, and the
+reason is below. No OK, no nudge, no prelude, no probe, no third press.
+
+| action | frames | and then |
 |---|---|---|
-| **On** | `wake` — `2A 2A 07 09 77 61 6B 65 75 70 9D` | nothing |
-| **Off** | `power` — `2A 2A 02 07 00 09` | **nothing** |
+| **On** | `power` — `2A 2A 02 07 00 09` ×1 | nothing |
+| **Off** | `power` — `2A 2A 02 07 00 09` ×2, **2 s apart** | nothing |
+
+**VERIFIED WORKING 2026-09-07 and not to be changed.** Captured cycle:
+
+```
+[2956.376] TX 07 00              on, one frame
+[3086.243] TX 07 00  key 1 of 2  off
+[3088.246] TX 07 00  key 2 of 2  +2.003 s
+```
+
+### Why off sends it twice
+
+**The first power key after a power-on is swallowed by the projector.** Proven
+with two byte-identical, acknowledged frames 91 s apart:
+
+```
+[178.905] TX 07 00 -> ACK 19 ms -> nothing happened
+[270.291] TX 07 00 -> ACK 32 ms -> countdown, projector off
+```
+
+The original firmware sent it twice *by accident* — its verify-then-retry loop
+tested `probeAnswered()`, which is always true here, so it always fired. That is
+why power off "worked perfectly" before, and removing that retry on 2026-09-05
+is what broke it. Every failure since was a single press; every success involved
+a second one, including manual ones where the operator simply pressed again when
+nothing happened.
+
+This is the **one agreed exception** to one-command-per-power-action. It is
+still only power keys.
 
 Anything sent after the power key turns the projector back on — the `OK` lands
 on the next screen, a second power key is simply a second toggle. Observed

@@ -797,3 +797,28 @@ When that build failed, the nudge was blamed and `OK` was restored — the right
 change was reverted because two things were changed at once. That single mistake
 cost most of a day, and it is the reason "change one thing at a time" is now
 written into docs/12-power-logic.md as a rule rather than advice.
+
+### 2026-09-07 — VERIFIED FIX: power off sends the power key twice
+
+```
+[2956.376] TX 2A 2A 02 07 00 09              on, one frame
+[3086.243] TX 2A 2A 02 07 00 09  key 1 of 2  off
+[3088.246] TX 2A 2A 02 07 00 09  key 2 of 2  +2.003 s
+```
+
+Full cycle from the SofaBaton activity. Operator: **"IT WORKS!"**
+
+**The first power key after a power-on is swallowed by the projector.** Proven
+with two byte-identical acknowledged frames 91 s apart — the first ignored, the
+second raising the countdown. The original firmware sent it twice by accident
+(its `probeAnswered()` retry always fired), which is why off "worked perfectly"
+before 2026-09-05 and why removing that retry broke it.
+
+Also fixed in this build, and independently significant: **`<power-mode>` in the
+Roku device-info was hardcoded to `DisplayOff`.** It read `titanPower()`, which
+returns a value that never leaves `PWR_UNKNOWN` in this build. The bridge told
+the hub the projector was off on every single poll, including while it was on.
+The operator identified this ("this issue is 1000% on the titan-bridge side")
+after being told, wrongly, that it was projector-side.
+
+**0.8.2 and 0.8.3 are broken and should not be used.**

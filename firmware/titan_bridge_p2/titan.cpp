@@ -840,30 +840,45 @@ static void runAction() {
     // ONE COMMAND. See docs/12-power-logic.md — power on and power off each
     // send exactly one frame and nothing else. Anything more belongs in the
     // hub's automation or in a macro.
-    titanSendNamed("wake");
-    tlog("power on: wake sent (cannot be verified on this projector)");
+    // A/B under test 2026-09-07: wake (0x09) vs the power key for turning ON.
+    // Every off that has ever worked followed a POWER-KEY power-on; every off
+    // that failed followed a wake. Still one command — the rule holds.
+    titanSendNamed("power");
+    tlog("power on: power key sent (cannot be verified on this projector)");
     assumeAfterToggle(true);
     act = ACT_NONE;
     return;
   }
 
-  // ACT_OFF — send the power key. Nothing else. Ever.
+  // ACT_OFF — the power key, sent TWICE, 2 s apart. Nothing else.
   //
-  // The power key alone shuts the projector down. Anything sent afterwards
-  // turns it back on: the OK lands on the next screen, and a second power key
-  // is simply a second toggle. Observed directly 2026-09-07 — "it turns off,
-  // then right back on again".
+  // The first power key after a power-on is swallowed by the projector. Proven
+  // 2026-09-07 with two byte-identical, acknowledged frames 91 s apart:
   //
-  // Do not add a confirm, a retry, a verification probe, or a second cycle.
-  // Every one of those has been tried and every one made this worse:
-  //   * verify-then-retry  -> double toggle, projector comes back on
-  //   * OK after 900 ms    -> lands after the shutdown, wakes it
-  //   * back / OSD prelude -> no effect, or worse
-  //   * countdown wait     -> harmless but pointless
+  //     [178.905] TX 07 00 -> ACK 19 ms -> nothing happened
+  //     [270.291] TX 07 00 -> ACK 32 ms -> countdown, projector off
+  //
+  // The original firmware sent it twice by accident — its verify-then-retry
+  // loop tested probeAnswered(), which is always true here, so it always fired.
+  // That is why power off "worked perfectly" before, and removing that retry on
+  // 2026-09-05 is what broke it. Every failure since has been a single press;
+  // every success involved a second one, including manual ones where the
+  // operator simply pressed again when nothing happened.
+  //
+  // This is the ONE agreed exception to one-command-per-power-action. It is
+  // still only power keys. Do NOT add an OK, a nudge, an OSD prelude, a
+  // verification probe or a third press — every one of those was tried and made
+  // this worse. See docs/12-power-logic.md.
   switch (actStep) {
     case 0:
       titanSendNamed("power");
-      tlog("power off: power key sent");
+      tlog("power off: power key 1 of 2");
+      actAt = millis() + POWEROFF_REPEAT_MS; actStep = 1;
+      break;
+
+    case 1:
+      titanSendNamed("power");
+      tlog("power off: power key 2 of 2");
       assumeAfterToggle(false);
       act = ACT_NONE;
       break;

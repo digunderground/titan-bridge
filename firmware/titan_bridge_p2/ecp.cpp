@@ -509,8 +509,20 @@ static String deviceInfoXml() {
   x += F("<user-device-name>");     x += DEVICE_NAME; x += F("</user-device-name>");
   x += F("<software-version>12.0.0</software-version>");
   x += F("<software-build>4444</software-build>");
+  // Report the state we actually track. This used to read titanPower(), which
+  // returns `pwr` — a value that never leaves PWR_UNKNOWN in this build, since
+  // every setPower() is compiled out or unreachable. The result was a device
+  // that told the hub "DisplayOff" permanently, including while the projector
+  // was on.
+  //
+  // That is not cosmetic: a hub polls device-info to decide what to do. Told
+  // the device was already off, its activity's power-off step had nothing to
+  // do — while a manual press in the SofaBaton app sent the key regardless,
+  // which is exactly the split the operator observed. It also explains the
+  // unsolicited PowerOn on rediscovery: the hub was correcting a device that
+  // claimed to be off.
   x += F("<power-mode>");
-  x += (titanPower() == PWR_AWAKE) ? F("PowerOn") : F("DisplayOff");
+  x += (titanAssumedKnown() && !titanAssumedOn()) ? F("DisplayOff") : F("PowerOn");
   x += F("</power-mode>");
   x += F("<supports-suspend>true</supports-suspend>");
   x += F("<supports-find-remote>false</supports-find-remote>");

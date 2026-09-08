@@ -173,6 +173,17 @@
 // state, not a delivery problem. Opening the on-screen menu and closing it
 // again makes the very same power frame work. Measured 2026-09-07.
 #define POWEROFF_OSD_MS          700UL   // gap between the OSD wake-up presses
+// Power OFF sends the power key TWICE. The first one after a power-on is
+// swallowed by the projector — proven 2026-09-07 with two byte-identical
+// acknowledged frames 91 s apart, the first ignored, the second raising the
+// countdown. The original firmware did this by accident (its verify-retry loop
+// always fired) which is why it "worked perfectly"; removing that retry is what
+// broke power off.
+//
+// This is the ONE deliberate exception to the one-command-per-power-action
+// rule, agreed with the operator. Still only power keys — no OK, no nudge, no
+// prelude. Do not add anything else here.
+#define POWEROFF_REPEAT_MS      2000UL   // gap between the two power keys
 #define POWEROFF_ACK_WAIT_MS     400UL   // wait for the power key's ACK before trusting it
 #define POWEROFF_CYCLES             2    // full power+OK cycles, as the original did
 // Measured 2026-09-07 from a power-off that actually worked: the operator's OK
@@ -317,5 +328,5 @@
 // Firmware identity, reported in /api/status and the Roku device-info.
 // Keep this in step with /VERSION and the git tag — the app compares it against
 // the latest GitHub release to tell you whether the unit is current.
-#define FW_VERSION "0.8.3-alpha"
+#define FW_VERSION "0.8.4-alpha"
 #define FW_REPO    "digunderground/titan-bridge"
