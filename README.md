@@ -33,8 +33,8 @@ hub discovers it as a TV and drives it with a native remote layout.
 | Capability | Status | Notes |
 |---|---|---|
 | Menu navigation | ✅ | arrows, OK, Back, Menu — on **either** channel |
-| Discrete power **on** | ✅ | serial `wake`, or HID `0x66` |
-| Power **off** | ✅ | serial power key + confirm, or HID `0x66` |
+| Power **on** | ✅ | power key ×1 — **editable in the app** |
+| Power **off** | ✅ | power key ×2, 2 s apart — **editable in the app** |
 | Direct input select | ✅ | HDMI1 / HDMI2 / **HDMI3** / USB — serial |
 | Picture modes | ⚠️ | Only **Performance** and **Filmmaker** take effect. See below. |
 | Brightness, blank, high-refresh | ✅ | serial |
@@ -43,6 +43,9 @@ hub discovers it as a TV and drives it with a native remote layout.
 | Home Assistant | ✅ | REST, no MQTT, no custom component, no HACS |
 | SofaBaton X2 | ✅ | Roku ECP; saved macros appear as launchable apps |
 | Infrared receiver | ✅ | optional TSOP38238, so a dead router doesn't cost you the remote |
+| Editable power sequences | ✅ | Settings → Power commands; shows the literal frames |
+| Firmware install from the app | ✅ | over your LAN — the bridge never contacts the internet |
+| Persistent event log | ✅ | `/api/events`; survives reboots and power loss |
 | **Reading power state** | ❌ | nothing on this projector reports it — see below |
 
 ### The one real limitation
@@ -79,17 +82,20 @@ Both of these are the exact parts this was built and verified against.
 | Part | Why this one |
 |---|---|
 | **[ESP32-S3-DevKitC-1 (N16R8)](https://a.co/d/0eFIGSre)** | Two USB-C ports. The native port presents USB HID to the projector while the UART port keeps a console and flashing — a single-port board forces you to unplug the projector on every reflash. |
-| **[DSD TECH SH-U09G — FTDI FT232RL USB-to-TTL](https://a.co/d/05u0XP1Y)** | The **only** adapter class this projector binds. 3.3 V TTL, so it wires straight to the ESP32 with no level shifting. |
+| **[DSD TECH SH-U09G — FTDI FT232RL USB-to-TTL](https://a.co/d/05u0XP1Y)** | Binds first time. 3.3 V TTL, wires straight to the ESP32 with no level shifting. Simplest build — but see *back-powering* below. |
+| **OIKWAN USB→RS232 + a MAX3232 breakout** | Also binds, and is **immune to back-powering by construction**. More parts and a DB9, but the electrically correct build. |
 
-### Adapters that do NOT work
+### Which adapters this projector binds
 
 This cost a day to establish, so it is worth stating plainly:
 
 | Chip | Driver | Binds? |
 |---|---|---|
-| **FT232RL** | `ftdi_sio` | ✅ **yes** |
+| **FT232RL** (DSD TECH SH-U09G) | `ftdi_sio` | ✅ **yes** |
+| **FTDI** (OIKWAN USB→RS232, via MAX3232) | `ftdi_sio` | ✅ **yes** |
 | CP2102 | `cp210x` | ❌ never |
 | CH340G | `ch341` | ❌ never |
+| PL2303TA | `pl2303` | **untested** |
 
 In every failing case the wiring was proven first on a bench — laptop standing
 in for the projector, frames out and replies in — so the failures were
@@ -140,6 +146,32 @@ The cable's **USB-A** goes into the projector's **USB 2.0** port.
 > GPIO18 to GND. Do **not** fit that divider speculatively — it drops a genuine
 > 3.3 V signal to ~2.2 V, below the ESP32-S3's logic-high threshold.
 
+### ⚠️ Back-powering across the TTL link
+
+With the ESP32 unpowered and the FTDI cable plugged into the projector, **a dim
+LED lights on the ESP32.** The adapter's TXD idles high at 3.3 V and drives
+GPIO18; that current flows through the pin's ESD clamp diode into the ESP32's
+3.3 V rail and partially powers the board.
+
+It works the other way too, and that direction matters more: with the ESP32 on
+external power and the projector in standby (USB rail dead), GPIO17 idles high
+into the **unpowered adapter** and back-powers it.
+
+Two fixes:
+
+- **Series resistors** — 4.7 kΩ–22 kΩ (10 kΩ ideal) in each data line. Caps the
+  leak at ~330 µA, far below what an FT232RL needs to run. **Never in the ground
+  line**, which must stay a direct connection.
+- **MAX3232 + a USB↔RS232 adapter** — immune by construction. The ESP32 drives
+  only the MAX3232, powered from the ESP32's own rail so never unpowered, and
+  the RS232 link between them uses receivers that are resistive and rated to be
+  driven at ±25 V while powered off. Neither end can parasitically power the
+  other. See `docs/11-adapter-driver-test.md` for the wiring.
+
+**TX/RX can be reversed in two places** in the MAX3232 build — the TTL side and
+the DB9 side — and swapping both cancels out. A single swap gives frames out and
+`rx=0` forever.
+
 ### On the projector
 
 **Settings → General → Serial Port Control = ON.** Leave `ID Group` at `A`,
@@ -183,6 +215,20 @@ Find the port with `arduino-cli board list`. On this board **both** USB ports
 enumerate as `usbmodem*` — the UART one is a separate bridge chip ("USB Single
 Serial" / CH343), the other is Espressif silicon. Flash through the **UART**
 one.
+
+### 2b. Updating later — from the app
+
+Once it is on Wi-Fi you do not need a computer again. **Settings → Software**
+checks GitHub, links straight to the release `.bin`, and installs it over your
+LAN. Your **phone** fetches the file; the bridge itself never contacts the
+internet, so there is no TLS on the device and no certificate to rotate.
+
+The panel is always available, not just when an update exists — any release
+`.bin` can be installed, so it is also how you **roll back**.
+
+An interrupted upload leaves the running image intact. It does **not** protect
+against a valid image that misbehaves, so keep the USB cable: `tools/flash.sh`
+is the recovery path.
 
 ### 3. Wi-Fi
 
@@ -285,18 +331,29 @@ and rescan. Details and the full key map in
 
 ---
 
-## Simplifying later
+## Serial-only — the configuration this now runs
 
-Once you are confident serial covers everything you use, the HID channel — and
-with it one projector USB port — can be dropped:
+Serial covers everything, so the HID channel and one projector USB port can be
+dropped. **This is the build in daily use**, not a theoretical option:
 
-- FTDI cable → projector USB, ESP32 → **its own 5 V supply**
-- The ESP32's native USB port comes free
+- Serial adapter → projector USB
+- ESP32 → **its own 5 V supply**, into the board's `UART` port
+- The ESP32's native `USB` port left **unplugged** — nothing of the ESP32
+  touches the projector
 
-The catch: the board is currently powered *by* the projector's USB through that
-very port, so removing it means providing power. Keeping both costs nothing but
-a USB port, and HID carried the entire project for two days while serial looked
-impossible.
+Two things it buys beyond a free USB port. The bridge stays up when the
+projector is off, so it keeps logging through events you would otherwise miss.
+And with nothing of the ESP32 attached to the projector's USB bus, USB
+enumeration is eliminated as a variable entirely — which mattered while chasing
+a spontaneous power-on.
+
+Keep the USB cable for recovery. `tools/flash.sh` over USB is the only way back
+from an image that boots but never reaches the network — which has happened.
+
+HID is still in the firmware and still works. It carried the entire project for
+two days while serial looked impossible, and it is worth keeping as a fallback
+if you have a spare projector USB port. Set the channel in **Settings → Control
+channel**; power routing follows the configured channel and is never inferred.
 
 ---
 
@@ -337,6 +394,7 @@ says otherwise.
 - **`0x07` parameter `0x06` opens a calibration test pattern** — a service
   screen with no button on the remote.
 - **Only FTDI binds.** CP2102 and CH340 are never bound by this projector.
+  PL2303TA remains untested.
 - **An ACK does not mean the command did anything.** Five *documented* picture
   modes acknowledge cleanly and change nothing. Receipt is all it proves — the
   converse of the previous point, and it cost a full probing session to notice.
@@ -346,6 +404,15 @@ says otherwise.
   or power.
 - **Settings changed on the physical remote are invisible.** A five-mode walk
   through the picture menu produced no serial traffic whatsoever.
+- **The projector's own "Auto Power Off When Inactive" setting turns it ON.**
+  On firmware v1.2.92, `Settings → General → Advanced Settings → Power On/Off
+  Settings → Auto Power Off When Inactive`, set to anything but *Never*, powers
+  the projector **on** that many minutes after it is switched **off**. Set to 10
+  minutes it woke ~10 minutes after every shutdown. This cost three days and
+  nine wrong theories, because the setting had been added *during* the
+  investigation as a stop-gap and so correlated with every change made.
+  **Nothing in this firmware ever caused it.** Reported to XGIMI; see
+  `docs/RECALL.md` R-0004.
 
 ---
 
