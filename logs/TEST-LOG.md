@@ -822,3 +822,64 @@ The operator identified this ("this issue is 1000% on the titan-bridge side")
 after being told, wrongly, that it was projector-side.
 
 **0.8.2 and 0.8.3 are broken and should not be used.**
+
+### 2026-09-08 — OIKWAN FTDI + MAX3232 binds; back-powering measured
+
+**A second adapter class works.** OIKWAN USB↔RS232 + MAX3232 level shifter: the
+projector binds it and answers normally (`linkalive=True`, temperature frames
+returning). "Only FTDI binds" should now read: FT232RL and OIKWAN-FTDI both
+bind; CP2102 and CH340 do not; **PL2303TA remains untested**.
+
+**Back-powering, observed directly.** With the ESP32 unpowered and the FTDI
+cable in the projector, a dim red LED lights on the ESP32 — the adapter's TXD
+idling at 3.3 V, conducting through GPIO18's ESD clamp into the ESP32's rail.
+The reverse case is the concerning one: ESP32 on external power, projector in
+standby, GPIO17 idling into an unpowered adapter. Unproven as a wake cause, but
+it is a real electrical fault and now designed out by the MAX3232 build.
+
+**Wiring note:** TX/RX reversed on first assembly — frames out, `rx=0`. With a
+MAX3232 there are two places to get it wrong and swapping both cancels out.
+
+## 2026-09-10 — RESOLVED: the spontaneous power-on was an XGIMI setting
+
+**Root cause: `Settings → General → Advanced Settings → Power On/Off Settings →
+"Auto Power Off When Inactive"` (labelled "Turn off when not in use").**
+
+Set to anything other than **Never**, it powers the projector **ON** that many
+minutes after it has been switched **off**. It was set to 10 minutes. The
+projector woke ~10 minutes after every shutdown.
+
+This is an XGIMI firmware bug — the setting does the opposite of its label.
+Workaround: set it to **Never**. Reported to XGIMI.
+
+### Why this took three days
+
+The setting was added **during troubleshooting**, as a stop-gap to stop the
+projector running unattended while we worked. So the fault appeared at the same
+time as our changes and correlated with every one of them. Theories built on
+those coincidences, in order, all wrong:
+
+| theory | what actually killed it |
+|---|---|
+| `wake` (0x09) poisons the projector | confounded — the test omitted the hub's `InputHDMI1` |
+| the `OK` confirm wakes it | wakes happened with no `OK` |
+| the no-signal HDMI screen blocks power | the OEM remote failed there too |
+| `InputHDMI1` puts it in a bad state | wake happened without it |
+| SSDP rediscovery → hub re-asserts PowerOn | real and fixed, but not this |
+| the 10 s temperature poll | gated off; wake continued with `tx=0` |
+| the hub's `Select` after PowerOff | wakes happened with no `Select` |
+| a device on HDMI 2 | unplugged; wake continued |
+| serial-off vs remote-off | the timer fired regardless of how it was turned off |
+
+**The operator found it**, by reading the projector's own power menu.
+
+### The lesson
+
+**A mitigation added during an investigation becomes a variable in that
+investigation.** The stop-gap was introduced to reduce harm and was never
+entered on the list of things that had changed — so every subsequent
+observation was measured against a baseline that had already moved.
+
+Record what you change *while* debugging, not just what you were debugging.
+And when an interval is strikingly precise and constant, look for a configured
+timer with that exact value before theorising about mechanisms.

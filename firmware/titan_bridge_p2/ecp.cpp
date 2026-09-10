@@ -3,6 +3,7 @@
 #include <WebServer.h>
 #include "ecp.h"
 #include "net.h"
+#include <Update.h>
 #include "titan.h"
 #include "macros.h"
 #include "irrx.h"
@@ -323,6 +324,61 @@ static void uiRoutes() {
   ui.on("/api/log",    HTTP_ANY, []() { cors(ui); ui.send(200, "text/plain", logDump()); });
   // Survives reboots and power loss, unlike /api/log.
   ui.on("/api/events", HTTP_ANY, []() { cors(ui); ui.send(200, "text/plain", evlogDump()); });
+
+  // Firmware upload over the LAN. The bridge deliberately never talks to the
+  // internet — the phone fetches the .bin from GitHub and hands it here, so
+  // there is no TLS, no certificate pinning and nothing to rotate.
+  //
+  // The ESP32 writes to the INACTIVE app partition and only switches after a
+  // verified write, so an interrupted upload leaves the running image intact.
+  // It does NOT protect against a valid image that misbehaves — one landed on
+  // 2026-09-08, booted, and never joined Wi-Fi. USB (tools/flash.sh) stays the
+  // recovery path.
+  ui.on("/api/otaupload", HTTP_POST,
+    []() {                                   // completion
+      bool ok = !Update.hasError();
+      cors(ui);
+      ui.send(200, "text/plain", ok ? "ok" : "failed");
+      if (ok) {
+        tlog("OTA upload: applied, rebooting");
+        evlogAdd("OTA upload applied");
+        delay(400);
+        ESP.restart();
+      }
+    },
+    []() {                                   // the upload itself
+      HTTPUpload &up = ui.upload();
+      if (up.status == UPLOAD_FILE_START) {
+        tlog("OTA upload: '%s' starting", up.filename.c_str());
+        if (!Update.begin(UPDATE_SIZE_UNKNOWN))
+          tlog("OTA upload: cannot start — %s", Update.errorString());
+      } else if (up.status == UPLOAD_FILE_WRITE) {
+        if (Update.write(up.buf, up.currentSize) != up.currentSize)
+          tlog("OTA upload: write failed — %s", Update.errorString());
+      } else if (up.status == UPLOAD_FILE_END) {
+        if (Update.end(true)) tlog("OTA upload: %u bytes verified", up.totalSize);
+        else                  tlog("OTA upload: verify FAILED — %s", Update.errorString());
+      } else if (up.status == UPLOAD_FILE_ABORTED) {
+        Update.abort();
+        tlog("OTA upload: aborted — running image untouched");
+      }
+    });
+
+  // Editable power sequences. GET returns current + defaults; POST saves one.
+  ui.on("/api/powerseq", HTTP_ANY, []() {
+    String w = argOr(ui, "which");
+    if (w.length()) {
+      bool on = (w == "on");
+      if (argOr(ui, "reset") == "1") titanPowerSeqSet(on, titanPowerSeqDefault(on));
+      else if (ui.hasArg("seq"))     titanPowerSeqSet(on, ui.arg("seq").c_str());
+    }
+    String j = "{";
+    j += "\"on\":\"";      jesc(j, titanPowerSeq(true));         j += "\",";
+    j += "\"off\":\"";     jesc(j, titanPowerSeq(false));        j += "\",";
+    j += "\"ondef\":\"";   jesc(j, titanPowerSeqDefault(true));  j += "\",";
+    j += "\"offdef\":\""; jesc(j, titanPowerSeqDefault(false)); j += "\"}";
+    okJson(ui, j);
+  });
   ui.on("/api/macros", HTTP_ANY, []() { okJson(ui, macroListJson()); });
   ui.on("/api/irmaps", HTTP_ANY, []() { okJson(ui, irMapJson()); });
 
@@ -609,7 +665,14 @@ static void ecpRoutes() {
   // /keypress/<Key>, /keydown/<Key>, /keyup/<Key>, /launch/<id>, /input
   ecp.onNotFound([]() {
     String u = ecp.uri();
-    tlog("ECP %s <- %s", u.c_str(), ecp.client().remoteIP().toString().c_str());
+    String from = ecp.client().remoteIP().toString();
+    tlog("ECP %s <- %s", u.c_str(), from.c_str());
+    // Persist every hub request. The RAM log dies with the board and rotates,
+    // and the question "did the hub send anything at the moment the projector
+    // woke?" has to survive both. Power keys especially: PowerOff resolves to a
+    // TOGGLE on this projector, so one sent to an already-off unit turns it on.
+    if (u.indexOf("Power") >= 0 || u.indexOf("power") >= 0)
+      evlogAdd("ECP %s from %s", u.c_str(), from.c_str());
 
     auto tail = [&](const char *pfx) -> String {
       if (!u.startsWith(pfx)) return String();

@@ -69,6 +69,16 @@ textarea{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;
 .seg button{flex:1;background:none;border-radius:8px;padding:8px 4px;min-height:36px;
   font-size:14px;color:var(--dim);font-weight:500}
 .seg button.on{background:var(--ac);color:#fff}
+/* Inherits colour and background from the input,select,textarea rule above —
+   do not restate them here. An earlier version set color:inherit and a
+   var(--card) that this theme does not define, which rendered dim text on
+   the wrong background. Inset by 16px to match every other .grp child. */
+.seqbox{display:block;width:calc(100% - 32px);margin:0 16px 2px;
+  min-height:78px;line-height:1.55;resize:vertical}
+/* NOT .lbl — that is already an inline <span> in the status rows. Naming this
+   .lbl made those labels display:block and broke every row's alignment. */
+.seqlbl{display:block;font-size:12px;font-weight:600;color:var(--dim);
+  padding:10px 16px 5px;text-transform:uppercase;letter-spacing:.05em}
 .acts{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;padding:4px 16px 16px}
 .acts button{padding:12px 4px;font-size:13px;line-height:1.25}
 .acts button .ico{display:block;font-size:19px;margin-bottom:3px}
@@ -122,6 +132,10 @@ textarea{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;
 table{width:100%;border-collapse:collapse;font-size:13px}
 td,th{padding:7px 16px;text-align:left;border-top:1px solid var(--sep);vertical-align:top}
 th{color:var(--dim);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.05em}
+.row{display:flex;justify-content:space-between;align-items:baseline;
+  gap:12px;padding:8px 16px}
+.row .lbl{color:var(--dim);font-size:13px}
+.row .val{text-align:right;word-break:break-all}
 td.val{color:var(--dim);text-align:right;word-break:break-all}
 td code{font-family:ui-monospace,Menlo,monospace;color:var(--ac2);font-size:12px}
 pre{background:#070910;border-radius:11px;padding:12px;overflow:auto;max-height:280px;
@@ -267,6 +281,32 @@ nav button.on{color:var(--ac2)}
   </div>
 
   <div class=grp>
+    <h2>Power commands</h2>
+    <p class=note>The exact frames sent for power on and power off. One frame per
+      line as hex; <code>wait &lt;ms&gt;</code> pauses between them. What you type
+      is what goes on the wire — no checksum correction, no extra keys, no retry.
+      Compare against XGIMI's command reference and change freely; nothing else
+      in the firmware depends on these.</p>
+
+    <label class=seqlbl>Power ON</label>
+    <textarea id=seqOn class=seqbox spellcheck=false></textarea>
+    <div class=hstack>
+      <button onclick="saveSeq('on')">Save</button>
+      <button onclick="resetSeq('on')">Reset to default</button>
+    </div>
+    <p class=note>Default: <code id=seqOnDef></code></p>
+
+    <label class=seqlbl>Power OFF</label>
+    <textarea id=seqOff class=seqbox spellcheck=false></textarea>
+    <div class=hstack>
+      <button onclick="saveSeq('off')">Save</button>
+      <button onclick="resetSeq('off')">Reset to default</button>
+    </div>
+    <p class=note>Default: <code id=seqOffDef></code></p>
+    <p class=note id=seqnote></p>
+  </div>
+
+  <div class=grp>
     <h2>Hub buttons — what each one runs</h2>
     <table id=routing></table>
     <div class=hstack>
@@ -303,6 +343,24 @@ nav button.on{color:var(--ac2)}
         <button class=pri>View release</button></a>
     </div>
     <p class=note id=fwnote></p>
+
+    <div id=fwup>
+      <p class=note>Download a firmware <code>.bin</code>, then pick it and install.
+        Any release works, so this is also how you <b>roll back</b> to an earlier
+        version. The bridge never contacts the internet — your phone fetches the
+        file and hands it over on the local network.</p>
+      <div class=hstack id=fwbinwrap>
+        <a id=fwbin download target=_blank rel=noreferrer>
+          <button class=pri>1 · Download .bin</button></a>
+      </div>
+      <div class=hstack>
+        <input id=fwfile type=file accept=".bin">
+      </div>
+      <div class=hstack>
+        <button id=fwgo onclick=uploadFw()>2 · Install and reboot</button>
+      </div>
+      <p class=note id=fwprog></p>
+    </div>
   </div>
 
   <div class=grp><h2>Status</h2><table id=st></table></div>
@@ -356,6 +414,30 @@ function tab(n){
   refresh();
 }
 async function go(u){try{await fetch(u,{method:'POST'});}catch(e){}refresh();}
+
+async function loadSeq(){
+  try{
+    const r=await (await fetch('/api/powerseq')).json();
+    $('seqOn').value=r.on; $('seqOff').value=r.off;
+    $('seqOnDef').textContent=r.ondef.replace(/\n/g,' \u00b7 ');
+    $('seqOffDef').textContent=r.offdef.replace(/\n/g,' \u00b7 ');
+  }catch(e){ $('seqnote').textContent='could not load the power sequences'; }
+}
+async function saveSeq(which){
+  const v=$(which==='on'?'seqOn':'seqOff').value;
+  try{
+    await fetch('/api/powerseq?which='+which+'&seq='+encodeURIComponent(v),{method:'POST'});
+    $('seqnote').innerHTML='<b>Saved.</b> Power '+which+' now sends exactly that.';
+  }catch(e){ $('seqnote').textContent='save failed'; }
+  loadSeq();
+}
+async function resetSeq(which){
+  try{
+    await fetch('/api/powerseq?which='+which+'&reset=1',{method:'POST'});
+    $('seqnote').innerHTML='<b>Power '+which+' reset to the default.</b>';
+  }catch(e){ $('seqnote').textContent='reset failed'; }
+  loadSeq();
+}
 
 /* Serial unlocked ~25 actions. Three stacked grids would bury the D-pad, so
    they share one row-height space behind a segmented control. */
@@ -603,13 +685,49 @@ async function checkUpdate(){
   const have=String(s.fw).replace(/^v/,'');
   $('fwlatest').textContent=r.tag_name;
   $('fwlink').href=r.html_url; $('fwlink').style.display='';
+  const bin=(r.assets||[]).find(a=>a.name&&a.name.endsWith('.bin'));
+  if(bin) $('fwbin').href=bin.browser_download_url;
+  $('fwbinwrap').style.display = bin ? '' : 'none';
   if(latest===have){
-    $('fwnote').innerHTML='<b>Up to date.</b>';
+    $('fwnote').innerHTML='<b>Up to date.</b> You can still install any .bin below — '
+      +'use it to roll back to an earlier release.';
   }else{
-    $('fwnote').innerHTML='<b class=warn>Update available.</b> Flash it over the air with '
-      +'<code>espota.py -i '+esc(s.ip)+' -p 3232 -f titan_bridge_p2.ino.bin -r</code> — '
-      +'no cable, and settings and macros survive.';
+    $('fwnote').innerHTML = bin
+      ? '<b class=warn>Update available.</b> Install it below — settings, macros and Wi-Fi all survive.'
+      : '<b class=warn>Update available</b>, but the release has no .bin attached. '
+        +'Download one from the release page, or flash from a computer.';
   }
+}
+
+/* Upload over the LAN. XHR rather than fetch, for real progress on a ~1.1 MB
+   file over Wi-Fi — a silent two-minute wait reads as a hang. */
+function uploadFw(){
+  const f=$('fwfile').files[0];
+  if(!f){ $('fwprog').innerHTML='<b class=warn>Pick the downloaded .bin first.</b>'; return; }
+  if(!f.name.endsWith('.bin')){ $('fwprog').innerHTML='<b class=warn>That is not a .bin file.</b>'; return; }
+  $('fwgo').disabled=true;
+  const fd=new FormData(); fd.append('firmware',f,f.name);
+  const x=new XMLHttpRequest();
+  x.open('POST','/api/otaupload');
+  x.upload.onprogress=e=>{
+    if(e.lengthComputable)
+      $('fwprog').textContent='Uploading '+Math.round(e.loaded/e.total*100)+'% — do not close this page.';
+  };
+  x.onload=()=>{
+    if(x.responseText.indexOf('ok')>=0){
+      $('fwprog').innerHTML='<b>Installed.</b> Rebooting — this page will come back in about 15 seconds.';
+      setTimeout(()=>location.reload(),15000);
+    }else{
+      $('fwprog').innerHTML='<b class=warn>Install failed.</b> The running firmware is untouched. Check the log.';
+      $('fwgo').disabled=false;
+    }
+  };
+  x.onerror=()=>{
+    $('fwprog').innerHTML='<b class=warn>Upload failed.</b> The running firmware is untouched.';
+    $('fwgo').disabled=false;
+  };
+  $('fwprog').textContent='Starting upload…';
+  x.send(fd);
 }
 async function saveWifi(){
   await fetch('/api/wifi?ssid='+encodeURIComponent(v('ss'))+'&pass='+encodeURIComponent(v('pw')),{method:'POST'});
@@ -659,6 +777,6 @@ async function refresh(){
   $('log').textContent=await (await fetch('/api/log')).text();
   $('log').scrollTop=$('log').scrollHeight;
 }
-drawActs();refresh();setInterval(()=>{refresh();if(curTab==='macros'&&recOn)pollRec();},2500);
+drawActs();refresh();loadSeq();setInterval(()=>{refresh();if(curTab==='macros'&&recOn)pollRec();},2500);
 </script>
 )HTML";

@@ -732,6 +732,82 @@ static bool hidPowerPath() {
 #endif
 }
 
+// ===================== editable power sequences =============================
+//
+// Power on and power off each run a short script of literal frames, editable
+// from Settings so sequences can be tested without a reflash. What is written
+// here is what goes on the wire: no checksum correction, no added confirm key,
+// no retry. See config.h for the format and the defaults.
+
+struct PwrStep { uint8_t frame[12]; uint8_t len; uint16_t waitMs; };
+static PwrStep  pwrSteps[PWRSEQ_MAX_STEPS];
+static uint8_t  pwrNSteps = 0, pwrIdx = 0;
+
+static String pwrSeqOn, pwrSeqOff;
+
+const char *titanPowerSeq(bool on)        { return (on ? pwrSeqOn : pwrSeqOff).c_str(); }
+const char *titanPowerSeqDefault(bool on) { return on ? PWRSEQ_ON_DEFAULT : PWRSEQ_OFF_DEFAULT; }
+
+void titanPowerSeqSet(bool on, const char *seq) {
+  String v = seq ? String(seq) : String();
+  if (v.length() > PWRSEQ_MAX_LEN) v = v.substring(0, PWRSEQ_MAX_LEN);
+  if (on) pwrSeqOn = v; else pwrSeqOff = v;
+  Preferences p;
+  if (p.begin("titan", false)) {
+    p.putString(on ? "pwrseqon" : "pwrseqoff", v);
+    p.end();
+  }
+  tlog("power %s sequence saved (%u chars)", on ? "on" : "off", v.length());
+}
+
+static void powerSeqBegin() {
+  Preferences p;
+  if (p.begin("titan", true)) {
+    pwrSeqOn  = p.getString("pwrseqon",  PWRSEQ_ON_DEFAULT);
+    pwrSeqOff = p.getString("pwrseqoff", PWRSEQ_OFF_DEFAULT);
+    p.end();
+  } else {
+    pwrSeqOn  = PWRSEQ_ON_DEFAULT;
+    pwrSeqOff = PWRSEQ_OFF_DEFAULT;
+  }
+}
+
+// Parse one sequence into steps. Returns the count; 0 means nothing to send,
+// which is reported rather than silently doing nothing.
+static uint8_t parsePowerSeq(const String &src) {
+  pwrNSteps = 0;
+  int i = 0;
+  while (i < (int)src.length() && pwrNSteps < PWRSEQ_MAX_STEPS) {
+    int nl = src.indexOf('\n', i);
+    String line = (nl < 0) ? src.substring(i) : src.substring(i, nl);
+    i = (nl < 0) ? src.length() : nl + 1;
+    line.trim();
+    if (!line.length() || line.startsWith("#")) continue;
+
+    if (line.startsWith("wait") || line.startsWith("WAIT")) {
+      long ms = line.substring(4).toInt();
+      if (ms < 0) ms = 0;
+      if (ms > 20000) ms = 20000;
+      if (pwrNSteps) pwrSteps[pwrNSteps - 1].waitMs = (uint16_t)ms;  // wait AFTER the previous frame
+      continue;
+    }
+
+    PwrStep st; st.len = 0; st.waitMs = 0;
+    uint8_t nib = 0; bool have = false;
+    for (int k = 0; k < (int)line.length() && st.len < sizeof(st.frame); k++) {
+      char c = line[k]; uint8_t v;
+      if      (c >= '0' && c <= '9') v = c - '0';
+      else if (c >= 'a' && c <= 'f') v = c - 'a' + 10;
+      else if (c >= 'A' && c <= 'F') v = c - 'A' + 10;
+      else continue;
+      if (!have) { nib = v; have = true; }
+      else { st.frame[st.len++] = (nib << 4) | v; have = false; }
+    }
+    if (st.len) pwrSteps[pwrNSteps++] = st;
+  }
+  return pwrNSteps;
+}
+
 void titanPowerOn(bool force) {
   // Turn the projector on the SAME WAY ITS OWN REMOTE DOES — with the power
   // key — not with wake.
@@ -761,8 +837,13 @@ void titanPowerOn(bool force) {
     return;
   }
   if (act != ACT_NONE) { tlog("busy: %s", titanBusyStr()); return; }
+  if (!parsePowerSeq(pwrSeqOn)) {
+    tlog("power on: sequence is empty — nothing sent. Fix it in Settings.");
+    return;
+  }
+  pwrIdx = 0;
   act = ACT_ON; actStep = 0; actTries = 0; actAt = millis();
-  tlog("power on: starting");
+  tlog("power on: starting (%u step(s))", pwrNSteps);
   evlogAdd("power ON requested");
 }
 
@@ -815,8 +896,13 @@ void titanPowerOff(bool force) {
   }
   if (act != ACT_NONE) { tlog("busy: %s", titanBusyStr()); return; }
   if (pwr == PWR_ASLEEP) { tlog("power off: already asleep"); return; }
+  if (!parsePowerSeq(pwrSeqOff)) {
+    tlog("power off: sequence is empty — nothing sent. Fix it in Settings.");
+    return;
+  }
+  pwrIdx = 0;
   act = ACT_OFF; actStep = 0; actTries = 0; actAt = millis();
-  tlog("power off: starting");
+  tlog("power off: starting (%u step(s))", pwrNSteps);
   evlogAdd("power OFF requested");
 }
 
@@ -836,53 +922,27 @@ void titanPowerToggle() {
 static void runAction() {
   if (act == ACT_NONE || (int32_t)(millis() - actAt) < 0) return;
 
-  if (act == ACT_ON) {
-    // ONE COMMAND. See docs/12-power-logic.md — power on and power off each
-    // send exactly one frame and nothing else. Anything more belongs in the
-    // hub's automation or in a macro.
-    // A/B under test 2026-09-07: wake (0x09) vs the power key for turning ON.
-    // Every off that has ever worked followed a POWER-KEY power-on; every off
-    // that failed followed a wake. Still one command — the rule holds.
-    titanSendNamed("power");
-    tlog("power on: power key sent (cannot be verified on this projector)");
-    assumeAfterToggle(true);
+  // Both directions run the editable sequence. The steps were parsed when the
+  // action started, so editing a sequence mid-flight cannot corrupt a run.
+  if (pwrIdx >= pwrNSteps) {
+    tlog("power %s: sequence complete (%u step(s)) — cannot be verified on this "
+         "projector", act == ACT_ON ? "on" : "off", pwrNSteps);
+    assumeAfterToggle(act == ACT_ON);
     act = ACT_NONE;
     return;
   }
 
-  // ACT_OFF — the power key, sent TWICE, 2 s apart. Nothing else.
-  //
-  // The first power key after a power-on is swallowed by the projector. Proven
-  // 2026-09-07 with two byte-identical, acknowledged frames 91 s apart:
-  //
-  //     [178.905] TX 07 00 -> ACK 19 ms -> nothing happened
-  //     [270.291] TX 07 00 -> ACK 32 ms -> countdown, projector off
-  //
-  // The original firmware sent it twice by accident — its verify-then-retry
-  // loop tested probeAnswered(), which is always true here, so it always fired.
-  // That is why power off "worked perfectly" before, and removing that retry on
-  // 2026-09-05 is what broke it. Every failure since has been a single press;
-  // every success involved a second one, including manual ones where the
-  // operator simply pressed again when nothing happened.
-  //
-  // This is the ONE agreed exception to one-command-per-power-action. It is
-  // still only power keys. Do NOT add an OK, a nudge, an OSD prelude, a
-  // verification probe or a third press — every one of those was tried and made
-  // this worse. See docs/12-power-logic.md.
-  switch (actStep) {
-    case 0:
-      titanSendNamed("power");
-      tlog("power off: power key 1 of 2");
-      actAt = millis() + POWEROFF_REPEAT_MS; actStep = 1;
-      break;
+  PwrStep &st = pwrSteps[pwrIdx];
+  char hex[40]; int q = 0;
+  for (uint8_t k = 0; k < st.len && q < (int)sizeof(hex) - 3; k++)
+    q += snprintf(hex + q, sizeof(hex) - q, "%02X ", st.frame[k]);
+  linkWrite(st.frame, st.len);
+  txFrames++;
+  tlog("power %s: step %u/%u  TX %s", act == ACT_ON ? "on" : "off",
+       pwrIdx + 1, pwrNSteps, hex);
 
-    case 1:
-      titanSendNamed("power");
-      tlog("power off: power key 2 of 2");
-      assumeAfterToggle(false);
-      act = ACT_NONE;
-      break;
-  }
+  actAt = millis() + st.waitMs;
+  pwrIdx++;
 }
 
 // ============================ liveness polling =============================
@@ -1003,6 +1063,7 @@ static void evlogBegin() {
 
 void titanBegin() {
   evlogBegin();
+  powerSeqBegin();
   keyChannelBegin();
   assumeBegin();
   powerModeBegin();

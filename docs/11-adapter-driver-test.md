@@ -86,7 +86,7 @@ Date ______________  Projector firmware ________________
 
 | Adapter | Chip | Driver | Binds? | rx | Notes |
 |---|---|---|---|---|---|
-| DSD TECH SH-U09G | FT232RL | ftdi_sio | | | |
+| DSD TECH SH-U09G | FT232RL | ftdi_sio | yes | 2026-09-05 | works, but back-powers over the TTL lines |
 | HiLetgo module   | CH340G  | ch341    | | | |
 | PL2303 cable     | PL2303TA| pl2303   | | | |
 | OIKWAN + MAX3232 | FTDI    | ftdi_sio | | | |
@@ -108,3 +108,55 @@ or `GET /api/keychan?mode=hid`. Macro navigation and `anchor` then travel over
 USB HID instead of instruction `0x07`, and the counted menu paths from
 `docs/10-hid-key-probe.md` work unchanged. That needs the native-USB port on
 the S3 DevKitC-1, not the onboard bridge chip.
+
+
+---
+
+## Back-powering across the TTL link (measured 2026-09-08)
+
+**Observed:** with the ESP32 **unpowered** and the FTDI cable plugged into the
+projector, a dim red LED lights on the ESP32. The adapter's TXD idles HIGH at
+3.3 V and drives GPIO18; that current flows through the pin's ESD clamp diode
+into the ESP32's 3.3 V rail and partially powers the board.
+
+The physics is symmetric, so the reverse happens too — and that direction is the
+one that matters. With the ESP32 on **external power** and the projector in
+standby (USB rail dead), GPIO17 idles HIGH into the unpowered adapter's RXD and
+back-powers it. A partially-energised USB device on the projector's port is a
+plausible wake vector, though unproven.
+
+### Two fixes
+
+**Series resistors** — 4.7 kΩ–22 kΩ (10 kΩ ideal) in each data line. Caps the
+leak at ~330 µA, far below what an FT232RL needs to run. **Never in the ground
+line**, which must stay direct.
+
+```
+ESP32 GPIO17 (TX) ──[10k]── adapter RXD
+adapter TXD ────────[10k]── ESP32 GPIO18 (RX)
+ESP32 GND ──────────────────  adapter GND      (direct)
+```
+
+**MAX3232 + a USB↔RS232 adapter — immune by construction, and now the
+recommended build.** The ESP32 drives only the MAX3232, powered from the ESP32's
+own rail so never unpowered. The MAX3232↔OIKWAN link is RS232, whose receivers
+are resistive (3–7 kΩ to ground) with no diode path to VCC and are rated to be
+driven at ±25 V while unpowered — exactly the hot-plug case RS232 was designed
+for. Neither end can parasitically power the other.
+
+| from | to |
+|---|---|
+| ESP32 3.3 V | MAX3232 VCC (essential) |
+| ESP32 GND | MAX3232 GND |
+| ESP32 GPIO17 (TX) | MAX3232 **T1IN** |
+| MAX3232 **R1OUT** | ESP32 GPIO18 (RX) |
+| MAX3232 **T1OUT** | DB9 pin 2 (RxD) |
+| MAX3232 **R1IN** | DB9 pin 3 (TxD) |
+| MAX3232 GND | DB9 pin 5 |
+
+**TX/RX can be reversed in two places** — the TTL side and the DB9 side — and
+swapping both cancels out. A single swap gives frames out, `rx=0` forever. This
+happened on the first attempt here. Breakout silkscreens are the trap: some
+label TTL pins from the MCU's perspective, some from the module's.
+
+**Still untested: PL2303TA.**

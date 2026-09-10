@@ -8,10 +8,16 @@ Exposed three ways at once: a **web app** you can add to a phone's home screen,
 a **REST API** for Home Assistant, and **Roku ECP emulation** so a SofaBaton
 hub discovers it as a TV and drives it with a native remote layout.
 
-> ### Alpha 0.8.4
+> ### Beta 0.9.0
 >
-> Working, daily-usable, and verified on **one** unit — an XGIMI TITAN Noir Max.
-> Nothing here has been tried on another projector or another firmware build.
+> Working and daily-usable, verified on **one** unit — an XGIMI TITAN Noir Max
+> on firmware v1.2.92. Nothing here has been tried on another projector or
+> another firmware build.
+>
+> Power on and power off are **editable from the app** (Settings → Power
+> commands) and show the literal serial frames, so they can be tuned to another
+> unit without a reflash. Firmware updates install **from the app** over the LAN
+> — the bridge itself never contacts the internet.
 >
 > Menu-walking macros are positional and tied to a specific projector firmware;
 > everything else is protocol-level and should travel further.

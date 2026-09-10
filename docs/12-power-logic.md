@@ -24,8 +24,8 @@ is the only design the protocol permits.
 
 | | command | behaviour |
 |---|---|---|
-| **On** | `wake` — `0x09` + ASCII `"wakeup"` | **Idempotent.** Sending it to an awake projector does nothing (measured 2026-09-06). |
-| **Off** | `power` key — `0x07 00` | **A toggle.** Sent to an off projector it turns it **on**. Raises a shutdown dialog that **must be confirmed** with `OK` (`0x07 0D`) — it does *not* time out into a shutdown. |
+| **Power key** | `0x07 00` | **A toggle.** The only thing that changes power state. Sent to an off projector it turns it **on**; sent to an on projector it starts a shutdown. |
+| `wake` | `0x09` + ASCII `"wakeup"` | Discrete on, and **idempotent** — sending it to an awake projector does nothing (measured 2026-09-06). No longer used by the power path, but still available by name. |
 
 There is **no discrete off**. `0x09` is string-keyed, so `sleep`, `standby`,
 `poweroff` and `shutdown` were each tried: all four ACK with the payload echoed
@@ -107,32 +107,32 @@ These follow from the asymmetry above, and they are the whole design:
 2. **Off is always guarded.** It is a toggle, so sending it on a stale belief
    turns the projector **on**. Worst case for guarding is "nothing happened";
    worst case for not guarding is "it switched on and stayed on".
-3. **Off is the power key AND a confirmed dialog.** The countdown does **not**
-   shut the projector down on its own — measured 2026-09-07: an off with no `OK`
-   ran the full countdown and the projector stayed on, while the byte-identical
-   sequence followed by an `OK` worked. Everything elaborate that was tried here
-   (countdown-only, a `back` nudge, an OSD prelude) was working around a missing
-   confirm.
-
-   The confirm delay is **2.5 s**, measured from an off that actually worked.
-   The original 900 ms was a guess sitting on the edge of the dialog appearing,
-   which is the best explanation for why power-off was intermittent rather than
-   simply broken. The dialog lives ~15 s; there is no reason to be quick.
-
-4. **Off waits for the power key's own ACK.** The power key is occasionally not
-   acknowledged at all, while an `OK` on the same wire is acknowledged in ~20 ms
-   — the projector dropping that frame, not a sick link. An unacknowledged power
-   key raised no dialog, so resending it cannot double-press. Resend up to 3
-   times; if never acknowledged, fail loudly and do not send `OK`.
-5. **The channel is explicit, never inferred.** Power goes over the configured
+3. **The sequences are editable, and what is stored is what is sent.**
+   Settings → Power commands holds both sequences as literal frames. No checksum
+   correction, no added confirm key, no retry — so a change can be tested
+   without a reflash, and the app shows exactly what goes on the wire. Defaults
+   are the table above; "Reset to default" restores them exactly.
+4. **The channel is explicit, never inferred.** Power goes over the configured
    key channel. Deducing it from link liveness routed power to an unwired HID
    channel and recorded success (see R-0002).
-6. **Never retransmit a key simulation** (`0x07`). A repeat is a second key
+5. **Never retransmit a key simulation** (`0x07`). A repeat is a second key
    press, not a duplicate request — for the power key it would cancel the
    countdown the first press raised. Only absolute-state commands are retried.
-7. **A command that was not delivered must never be recorded as done.** Silent
+6. **A command that was not delivered must never be recorded as done.** Silent
    failure recorded as success is what desyncs belief, and a desynced belief is
    what makes the guard suppress the next real attempt.
+
+## Not a power bug: the ~10 minute self power-on
+
+For three days the projector powered itself on ~10 minutes after every shutdown,
+and it was assumed to be something in this path. It was not. The cause was the
+projector's own setting — **Settings → General → Advanced Settings → Power
+On/Off Settings → "Auto Power Off When Inactive"** — which on firmware v1.2.92
+powers the unit **ON** that many minutes after it is switched **OFF**. It had
+been set to 10 minutes as a stop-gap *during* the investigation. See R-0004.
+
+Nine theories were built on that correlation and every one was wrong. Nothing in
+this firmware ever caused it.
 
 ## Dead inputs — to be removed
 

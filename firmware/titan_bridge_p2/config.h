@@ -184,6 +184,26 @@
 // rule, agreed with the operator. Still only power keys — no OK, no nudge, no
 // prelude. Do not add anything else here.
 #define POWEROFF_REPEAT_MS      2000UL   // gap between the two power keys
+
+// ---------------------------------------------------------------------------
+// Editable power sequences (Settings -> Power commands)
+//
+// Power on and power off each run a small script of literal serial frames, so
+// they can be changed and tested from the app without a reflash. These are the
+// defaults, and "Reset to defaults" restores exactly these.
+//
+// Format, one step per line:
+//     2A 2A 02 07 00 09     a frame, sent verbatim (spaces optional)
+//     wait 2000             pause, milliseconds
+//
+// Nothing is added to what you write here: no checksum fixing, no confirm key,
+// no retry. What you type is what goes on the wire.
+// ---------------------------------------------------------------------------
+#define PWRSEQ_MAX_STEPS           8
+#define PWRSEQ_MAX_LEN           240    // NVS string cap per sequence
+
+#define PWRSEQ_ON_DEFAULT  "2A 2A 02 07 00 09"
+#define PWRSEQ_OFF_DEFAULT "2A 2A 02 07 00 09\nwait 2000\n2A 2A 02 07 00 09"
 #define POWEROFF_ACK_WAIT_MS     400UL   // wait for the power key's ACK before trusting it
 #define POWEROFF_CYCLES             2    // full power+OK cycles, as the original did
 // Measured 2026-09-07 from a power-off that actually worked: the operator's OK
@@ -208,7 +228,16 @@
 // It costs nothing: the projector answers the probe identically in standby
 // (TEMP_PROBE_INDICATES_POWER 0), so polling a sleeping projector buys no
 // information whatsoever.
-#define POLL_WHEN_BELIEVED_OFF     0
+// Poll regardless of believed power state.
+//
+// This was set to 0 while the poll was suspected of waking the projector. It was
+// not: the cause was the projector's own "Auto Power Off When Inactive" setting,
+// which powers the unit ON that many minutes after it is switched OFF (see
+// R-0004). With the real cause found, the gate has no reason to exist — and it
+// caused two regressions of its own, because everFrame is what tells the rest of
+// the firmware the serial link is alive. Silencing the poll made the bridge
+// report "serial unavailable" and route power to an unwired HID channel.
+#define POLL_WHEN_BELIEVED_OFF     1
 #define ACK_TIMEOUT_MS           250UL   // no ACK by now => assume the frame was lost
 #define ACK_RETRIES                 2    // retransmits before giving up
 
@@ -328,5 +357,5 @@
 // Firmware identity, reported in /api/status and the Roku device-info.
 // Keep this in step with /VERSION and the git tag — the app compares it against
 // the latest GitHub release to tell you whether the unit is current.
-#define FW_VERSION "0.8.4-alpha"
+#define FW_VERSION "0.9.0-beta"
 #define FW_REPO    "digunderground/titan-bridge"
