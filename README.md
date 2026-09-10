@@ -418,4 +418,26 @@ says otherwise.
 
 ## Licence
 
-None yet — ask.
+**MIT** — see [LICENSE](LICENSE). Use it, fork it, sell it; keep the copyright
+notice. Copyright © 2026 digunderground.
+
+### Trademarks and affiliation
+
+Not affiliated with, endorsed by, or connected to XGIMI, Roku, Inc., or
+SofaBaton. **XGIMI** and **TITAN Noir** are trademarks of XGIMI Technology;
+**Roku** is a trademark of Roku, Inc.; **SofaBaton** is a trademark of its
+owner. They are used here only to describe what this software interoperates
+with.
+
+This project emulates Roku's External Control Protocol so that a universal
+remote hub will discover and drive the projector. It is an independent,
+clean-room implementation built from public protocol documentation and
+observed behaviour. It is not a Roku device, contains no Roku software, and
+is not a licensed or certified Roku product.
+
+### Warranty
+
+None. This drives a projector's power over an undocumented serial protocol,
+using command parameters established by probing hardware rather than from a
+vendor specification. It has been verified on exactly **one** unit. Read
+[`logs/TEST-LOG.md`](logs/TEST-LOG.md) before pointing it at yours.
