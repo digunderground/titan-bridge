@@ -945,5 +945,11 @@ lastrx    = 2A 2A 03 13 01 00 17    real temperature status
 only a physical re-attach makes it re-enumerate. Nothing in this firmware could
 cause or fix it — the UART self-test passed throughout. See R-0005.
 
+Rig at the time was the **MAX3232 + OIKWAN USB→RS232** build, which has no
+back-powering path — the ESP32 drives only the MAX3232, powered from its own
+rail, and the link to the adapter is RS232. An earlier note here blamed
+back-powering; that was carried over from the direct-TTL wiring and is wrong for
+this hardware.
+
 The app now leads with that remedy when it detects the state (transmitting, zero
 bytes back), instead of listing things to check.
