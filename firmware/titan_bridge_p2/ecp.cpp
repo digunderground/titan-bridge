@@ -260,6 +260,9 @@ String statusJson() {
   // and "there is no serial link" are indistinguishable to any consumer of
   // this API — which is exactly the confusion that cost an evening.
   j += "\"linkalive\":"; j += titanLinkEverRx() ? "true" : "false"; j += ",";
+  // Serial has answered at some point on this hardware, remembered across
+  // reboots. "Quiet because the projector is off" is not "unavailable".
+  j += "\"serialproven\":"; j += titanSerialProven() ? "true" : "false"; j += ",";
   j += "\"keychan\":\""; j += titanKeyChannelStr(); j += "\",";
   j += "\"powermode\":\""; j += titanPowerModeStr(); j += "\",";
   // "Observed" means genuinely measured. A live serial link does NOT qualify:
@@ -324,6 +327,15 @@ static void uiRoutes() {
   ui.on("/api/log",    HTTP_ANY, []() { cors(ui); ui.send(200, "text/plain", logDump()); });
   // Survives reboots and power loss, unlike /api/log.
   ui.on("/api/events", HTTP_ANY, []() { cors(ui); ui.send(200, "text/plain", evlogDump()); });
+
+  ui.on("/api/selftest", HTTP_ANY, []() {
+    String detail;
+    bool ok = titanSerialSelfTest(detail);
+    tlog("serial self-test: %s", detail.c_str());
+    String j = "{\"ok\":"; j += ok ? "true" : "false";
+    j += ",\"detail\":\""; jesc(j, detail); j += "\"}";
+    okJson(ui, j);
+  });
 
   // Firmware upload over the LAN. The bridge deliberately never talks to the
   // internet — the phone fetches the .bin from GitHub and hands it here, so

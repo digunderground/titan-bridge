@@ -462,17 +462,39 @@ function pickSeg(k){
 }
 function drawActs(){
   if(curSeg==='mine'){drawMine();return;}
-  const live=window._st?window._st.linkalive:true;
+  /* Dim only when serial has NEVER worked on this hardware. A quiet link
+     usually just means the projector is off — its USB rail powers the adapter —
+     and greying out the controls then is exactly backwards. */
+  const st=window._st||{};
+  const usable = st.serialproven!==false;
+  const quiet  = usable && st.linkalive===false;
   $('acts').innerHTML=SEGS[curSeg].map(([ic,lb,act])=>
     `<button onclick="runAct('${act}')"><span class=ico>${ic}</span>${esc(lb)}</button>`).join('');
   /* Everything on these three strips is serial-only; say so rather than
      leaving buttons that quietly do nothing. */
-  $('acts').style.opacity=live?'1':'.35';
-  $('acts').style.pointerEvents=live?'auto':'none';
-  $('actnote').innerHTML=live?''
-    :'<b class=warn>Serial unavailable.</b> These need a USB-serial adapter the '
-     +'projector will bind (FTDI works; CP2102 and CH340 do not). Connect one and '
-     +'they enable themselves.';
+  /* Never disabled. Greying these out is what trapped the operator: with the
+     projector off the adapter is unpowered and cannot answer, so the controls
+     you need to turn it ON were the ones switched off. Warn, never block. */
+  $('acts').style.opacity='1';
+  $('acts').style.pointerEvents='auto';
+  /* Name the causes in the order they actually occur, most recent first. A bare
+     "serial unavailable" sent the operator looking at this firmware three times
+     when the fault was a projector setting or a cable. */
+  const sent=st.tx||0, got=st.rx||0;
+  /* Keyed on THIS boot's counters, not on the persisted flag. Relying on
+     serialproven hid this message when a loopback self-test had falsely set it. */
+  $('actnote').innerHTML = (sent>20 && got===0)
+    ? '<b class=warn>Sending, but nothing is coming back.</b> '+sent+' frames out, '
+      +'0 bytes in — so the bridge is fine and the projector is not answering. Check, '
+      +'in this order:<br>'
+      +'<b>1.</b> Projector → <b>Settings → General → Serial Port Control = ON</b>. '
+      +'A factory reset turns this off.<br>'
+      +'<b>2.</b> The adapter is plugged into a projector USB port and its LED is lit.<br>'
+      +'<b>3.</b> TX and RX are crossed — the adapter\'s transmit goes to the ESP32\'s '
+      +'receive. With a MAX3232 there are two places to get this wrong.<br>'
+      +'<b>4.</b> The chip binds at all — FTDI does, CP2102 and CH340 do not.'
+    : (quiet ? 'Serial is quiet — normal while the projector is off, since its USB '
+              +'port powers the adapter. Commands are still sent.' : '');
 }
 async function runAct(a){
   await fetch('/api/macro?script='+encodeURIComponent(a),{method:'POST'});refresh();
@@ -748,13 +770,19 @@ async function refresh(){
 
   $('chhid').className=s.keychan==='hid'?'on':'';
   $('chser').className=s.keychan==='serial'?'on':'';
-  $('chser').disabled=!s.linkalive;
-  $('chnote').innerHTML=s.linkalive
-    ? "Both channels work on this projector. Serial does not depend on the ESP32's "
-      +'native USB port, so it survives reflashing; HID reaches keys serial has no '
-      +'equivalent for. Explicit <code>h:</code>/<code>s:</code> macro steps ignore this.'
-    : '<b class=warn>Serial unavailable.</b> No adapter has returned a valid frame, so '
-      +'that option is disabled — selecting it would leave every key silently doing nothing.';
+  /* Never disabled. Refusing serial while the link was quiet created a deadlock:
+     with the projector off the adapter is unpowered and cannot answer, so serial
+     could not be selected — but serial is what turns the projector on. */
+  $('chser').disabled=false;
+  $('chnote').innerHTML = (s.serialproven===false)
+    ? '<b class=warn>Serial has never returned a frame.</b> You can still select it, '
+      +'but check the adapter — FTDI binds, CP2102 and CH340 do not.'
+    : (s.linkalive===false
+      ? 'Serial is quiet right now, which is normal while the projector is off — its '
+        +'USB port powers the adapter. The channel still works.'
+      : "Both channels work on this projector. Serial does not depend on the ESP32's "
+        +'native USB port, so it survives reflashing; HID reaches keys serial has no '
+        +'equivalent for. Explicit <code>h:</code>/<code>s:</code> macro steps ignore this.');
   $('pmAssume').className=s.powermode==='assume'?'on':'';
   $('pmObey').className=s.powermode==='obey'?'on':'';
   $('pmnote').textContent=s.powermode==='obey'
@@ -768,7 +796,9 @@ async function refresh(){
   $('wifiCard').style.display=s.ap?'':'none';
   const rows=[['Power',s.power],['Reading',s.powerobserved?'measured':'assumed'],
     ['Temperature',s.temp],['Channel',s.keychan],['Link',s.link],
-    ['Serial link',s.linkalive?'alive':'never received a valid frame'],
+    ['Serial link', s.linkalive ? 'alive'
+        : (s.serialproven===false ? 'never received a valid frame'
+                                  : 'quiet (projector off?)')],
     ['Native CDC',s.cdc?'open':'not open'],['Frames sent',s.tx],['Bytes received',s.rx],
     ['Last reply',s.since<0?'never':s.since+' ms ago'],['Last frame',s.lastrx],
     ['Wi-Fi',(s.ap?'setup AP ':'')+esc(s.ssid)+' · '+esc(s.ip)],

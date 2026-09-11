@@ -3,6 +3,7 @@
 #include <stdarg.h>
 #include <Preferences.h>
 #include <esp_system.h>
+#include "driver/uart.h"
 #include "titan.h"
 #include "macros.h"
 
@@ -189,7 +190,17 @@ bool titanUsbAwake()      { return false; }
 static uint32_t txFrames = 0, rxBytes = 0;
 static uint32_t lastRxAt = 0;           // millis of last byte in
 static bool     everRx   = false;   // any byte at all, including line noise
-static bool     everFrame= false;   // a checksum-valid frame — the real signal
+static bool     everFrame= false;   // a checksum-valid frame THIS boot
+// Has serial ever worked on this hardware, across reboots? everFrame resets on
+// every boot, and the ordinary reason it is false is that the projector is OFF
+// and its USB rail — which powers the adapter — is dead. Treating that as "the
+// serial link is broken" is what silently failed the bridge over to an unwired
+// HID channel and then refused to let it back (2026-09-10).
+static bool     serialEverWorked = false;
+// True only while the loopback self-test runs. A looped-back frame is our own
+// transmission, not a reply, and must not mark the link proven — it did on
+// 2026-09-10 and wrote a false positive into NVS.
+static bool     inSelfTest = false;
 static uint32_t lastFrameAt = 0;    // millis of the last valid frame
 static bool     inPoll = false;     // routine liveness poll, not a user action
 static uint8_t  lastAckInstr = 0;   // last acknowledged instruction
@@ -370,6 +381,7 @@ static bool keyHid = (DEFAULT_KEY_CHANNEL == KEY_CHANNEL_HID);
 bool        titanKeyChannelHid() { return keyHid; }
 const char *titanKeyChannelStr() { return keyHid ? "hid" : "serial"; }
 bool        titanLinkEverRx()    { return everFrame; }
+bool        titanSerialProven()  { return serialEverWorked; }
 
 // Was the given instruction acknowledged within the last `withinMs`? The
 // absence of an ACK is how an unsupported command announces itself.
@@ -387,14 +399,13 @@ bool titanAcked(uint8_t instr, uint32_t withinMs) {
 }
 
 bool titanSetKeyChannel(bool useHid) {
-  // Refuse to route navigation down a serial link that has never answered.
-  // The UI gates this too, but the API is reachable from Home Assistant and a
-  // hub, and the failure mode — every key silently doing nothing — is exactly
-  // the one that cost an evening to diagnose.
-  if (!useHid && !everFrame) {
-    tlog("key channel: refusing serial, no valid frame has ever arrived");
-    return false;
-  }
+  // The operator's choice is honoured, always. Refusing serial when no frame had
+  // arrived created a deadlock: with the projector off the adapter is unpowered
+  // and cannot answer, so serial could not be selected — but serial is what
+  // turns the projector on. Warn, do not refuse.
+  if (!useHid && !everFrame && !serialEverWorked)
+    tlog("key channel: serial selected, but no frame has ever arrived — "
+         "check the adapter if keys do nothing");
   keyHid = useHid;
   Preferences p;
   p.begin("titan", false);
@@ -408,10 +419,11 @@ static void keyChannelBegin() {
   Preferences p;
   p.begin("titan", true);
   keyHid = p.getBool("keyhid", DEFAULT_KEY_CHANNEL == KEY_CHANNEL_HID);
+  serialEverWorked = p.getBool("serok", false);
   p.end();
   // A saved preference for serial is honoured, but the link has to prove
   // itself before anything routes down it — titanKey() falls back until then.
-  if (!keyHid) tlog("key channel: serial saved; will use it once a frame arrives");
+  if (!keyHid) tlog("key channel: serial%s", serialEverWorked ? "" : " (never proven yet)");
 }
 
 bool titanKey(const char *name) {
@@ -422,7 +434,13 @@ bool titanKey(const char *name) {
 
   // Saved preference says serial, but the link has not spoken yet — use HID
   // rather than dropping the key on the floor.
-  bool useHid = keyHid || !everFrame;
+  // The CONFIGURED channel is used. No inference, no silent fallback.
+  // This used to read `keyHid || !everFrame`, so a quiet link — i.e. a projector
+  // that is simply switched off — routed every key down HID. On a serial-only
+  // build that means nothing works at all, silently. Failing visibly on the
+  // channel the operator chose beats succeeding invisibly on one that is not
+  // wired.
+  bool useHid = keyHid;
 
   // The two vocabularies diverge, and translation has to work BOTH ways or a
   // key silently dies on one channel. Serial calls the OSD key "setting"
@@ -513,7 +531,15 @@ static void frameComplete(const uint8_t *f, uint8_t n) {
     tlog("RX %s BAD CHECKSUM (want %02X)", hex, (uint8_t)(sum & 0xFF));
     return;
   }
-  everFrame = true;
+  if (!everFrame) {
+    everFrame = true;
+    if (!serialEverWorked && !inSelfTest) {   // first ever — remember permanently
+      serialEverWorked = true;
+      Preferences p;
+      if (p.begin("titan", false)) { p.putBool("serok", true); p.end(); }
+      tlog("serial link proven — remembered across reboots");
+    }
+  }
   lastFrameAt = millis();
 
 #if !LOG_POLL_TRAFFIC
@@ -945,6 +971,58 @@ static void runAction() {
   pwrIdx++;
 }
 
+// ======================== serial self-test =================================
+//
+// Puts UART1 into the ESP32's internal loopback mode, sends one frame, and sees
+// whether it comes back. TX is fed straight to RX inside the chip, so nothing
+// leaves the board.
+//
+// This answers the one question the counters cannot: when tx climbs and rx stays
+// at zero, is the ESP32 actually driving the line, or is the fault off-board?
+// A PASS means the UART, the pins' peripheral routing and the frame parser all
+// work, and the problem is the adapter, the wiring, or the projector's Serial
+// Port Control setting. Three separate investigations have gone looking in this
+// firmware for a fault that was never here.
+bool titanSerialSelfTest(String &detail) {
+#if (SERIAL_CHANNELS & CH_UART1)
+  uint32_t rx0 = rxBytes;
+  bool     ever0 = everFrame;
+
+  inSelfTest = true;
+  if (uart_set_loop_back(UART_NUM_1, true) != ESP_OK) {
+    inSelfTest = false;
+    detail = "could not enable loopback";
+    return false;
+  }
+  const uint8_t probe[] = { 0x2A, 0x2A, 0x02, 0x13, 0x00, 0x15 };
+  Serial1.write(probe, sizeof(probe));
+  Serial1.flush();
+
+  uint32_t t0 = millis();
+  while (millis() - t0 < 300) {                 // pump RX ourselves
+    while (Serial1.available()) rxByte((uint8_t)Serial1.read());
+    delay(5);
+  }
+  uart_set_loop_back(UART_NUM_1, false);
+  inSelfTest = false;
+
+  uint32_t got = rxBytes - rx0;
+  everFrame = ever0;                            // a loopback must not count as
+                                                // the projector having answered
+  if (got >= sizeof(probe)) {
+    detail = String("UART1 OK — ") + got + " bytes looped back. The ESP32 is "
+             "driving the line; the fault is off-board.";
+    return true;
+  }
+  detail = String("UART1 FAILED — only ") + got + " bytes returned. The problem "
+           "is on the board.";
+  return false;
+#else
+  detail = "UART1 is not compiled into this build";
+  return false;
+#endif
+}
+
 // ============================ liveness polling =============================
 
 static uint32_t pollAt = 0;
@@ -1145,6 +1223,33 @@ void titanLoop() {
       pendLen = 0;
     }
   }
+
+  // Recover a wedged UART. If we are transmitting and NOTHING has come back for
+  // a long time — not even a junk byte — the peripheral may have stopped
+  // delivering after a break or framing error, which is what happens when the
+  // projector's USB rail dies mid-byte and takes the adapter with it. Tearing
+  // UART1 down and bringing it back is the only thing that clears that state.
+#if (SERIAL_CHANNELS & CH_UART1)
+  static uint32_t lastRecoverAt = 0;
+  {
+    // How long have we heard nothing? If we have never heard anything at all,
+    // that is the whole uptime.
+    uint32_t quietFor = everRx ? (millis() - lastRxAt) : millis();
+    if (txFrames > 4 &&
+        quietFor > UART_RECOVER_AFTER_MS &&
+        (millis() - lastRecoverAt) > UART_RECOVER_EVERY_MS) {
+      lastRecoverAt = millis();
+      Serial1.end();
+      delay(5);
+      pinMode(P2_RX_PIN, INPUT_PULLUP);
+      Serial1.begin(LINK_BAUD, SERIAL_8N1, P2_RX_PIN, P2_TX_PIN);
+      frLen = 0;
+      tlog("UART1 reset — %lu frames sent, nothing received for %lu s",
+           (unsigned long)txFrames, (unsigned long)(quietFor / 1000));
+      evlogAdd("UART1 reset after %lus quiet", (unsigned long)(quietFor / 1000));
+    }
+  }
+#endif
 
   // a partial frame that stops arriving is abandoned, not left to poison
   // the next one

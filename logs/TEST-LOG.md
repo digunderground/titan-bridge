@@ -883,3 +883,49 @@ observation was measured against a baseline that had already moved.
 Record what you change *while* debugging, not just what you were debugging.
 And when an interval is strikingly precise and constant, look for a configured
 timer with that exact value before theorising about mechanisms.
+
+## 2026-09-11 — "serial stopped working after a period of time"
+
+### What was measured
+
+| | |
+|---|---|
+| UART1 internal loopback self-test | **PASS** — 6 bytes returned. The ESP32 drives the line; the frame parser works. |
+| Frames transmitted | 2,834 over 7.8 h |
+| Bytes received | **0** — `rxBytes` counts junk too, so not even line noise reached GPIO18 |
+| Heap | flat at ~129 kB. Not a leak. |
+| Projector | **powered** — pings on the LAN, port 53 open, MAC in ARP |
+| Commands sent while the operator was using it | `InputHDMI2` → `LOST after 2 retries` |
+
+Boot #39 ran for **3.25 hours** and then every command began failing and never
+recovered until a reboot. That is the "works, then stops" signature.
+
+### Fixes made
+
+**UART recovery.** If the bridge has been transmitting and nothing at all has
+come back for 90 s, UART1 is torn down and re-initialised (at most once a
+minute). The suspected mechanism is the projector's USB rail dying mid-byte when
+it powers off, which kills the adapter and leaves RX floating — a break or
+framing error the ESP32 driver may not recover from on its own. Verified firing:
+`UART1 reset — 9 frames sent, nothing received for 90 s`. It did **not** restore
+communication here, so the wedged-UART theory is not the cause in this instance.
+
+**`/api/selftest`** — loops UART1 back on itself and reports whether the board is
+driving the line. This answers in one call the question that sent three separate
+investigations into this firmware looking for a fault that was never in it.
+
+### Two bugs introduced and fixed in the same session
+
+- The self-test's looped-back frame **set `serialEverWorked` in NVS** — a false
+  positive claiming the projector had answered when it was our own transmission.
+  Now suppressed while the self-test runs.
+- The actionable "sending but nothing comes back" message was gated on that same
+  persisted flag, so the false positive hid it. It now keys on this boot's
+  counters.
+
+### Where it stands
+
+The firmware is **proven innocent**: loopback passes, config unchanged
+(GPIO17/18, 115200), transmission confirmed. The projector is powered. The fault
+is in the physical path — adapter, cabling, or whether the projector is binding
+the adapter at all. No firmware change can reach it.

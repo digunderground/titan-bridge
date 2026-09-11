@@ -58,6 +58,13 @@ const char *titanKeyChannelStr();           // "serial" | "hid"
 // identical from the transmit side, and cost an evening to tell apart. Counting
 // raw bytes is not enough: a floating UART pin produces them on its own.
 bool        titanLinkEverRx();
+// Serial has answered at least once on this hardware, remembered across
+// reboots. Distinguishes "quiet because the projector is off" from
+// "never wired".
+bool        titanSerialProven();
+// Loop UART1 back on itself and see if a frame returns. Distinguishes a broken
+// board from a broken cable/adapter/projector setting.
+bool        titanSerialSelfTest(String &detail);
 bool        titanAcked(uint8_t instr, uint32_t withinMs);
 
 // USB bus state, which on a projector that suspends its host controller in

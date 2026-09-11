@@ -238,6 +238,19 @@
 // the firmware the serial link is alive. Silencing the poll made the bridge
 // report "serial unavailable" and route power to an unwired HID channel.
 #define POLL_WHEN_BELIEVED_OFF     1
+
+// UART recovery. Measured 2026-09-10: the bridge transmitted for 3.25 hours,
+// then every command started failing and never recovered until a reboot — heap
+// flat, so not a leak. The projector's USB rail dies when it powers off, which
+// kills the adapter mid-byte and leaves RX floating; that produces a break or
+// framing error, and the ESP32 UART driver can stop delivering data afterwards.
+// Nothing reset it, so the link stayed dead for hours.
+//
+// If we have been transmitting this long with nothing at all coming back, tear
+// the UART down and bring it up again. It costs microseconds and cannot make a
+// genuinely-quiet link worse.
+#define UART_RECOVER_AFTER_MS  90000UL   // no RX for this long while sending
+#define UART_RECOVER_EVERY_MS  60000UL   // and at most this often
 #define ACK_TIMEOUT_MS           250UL   // no ACK by now => assume the frame was lost
 #define ACK_RETRIES                 2    // retransmits before giving up
 
