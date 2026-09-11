@@ -485,14 +485,16 @@ function drawActs(){
      serialproven hid this message when a loopback self-test had falsely set it. */
   $('actnote').innerHTML = (sent>20 && got===0)
     ? '<b class=warn>Sending, but nothing is coming back.</b> '+sent+' frames out, '
-      +'0 bytes in — so the bridge is fine and the projector is not answering. Check, '
-      +'in this order:<br>'
-      +'<b>1.</b> Projector → <b>Settings → General → Serial Port Control = ON</b>. '
-      +'A factory reset turns this off.<br>'
-      +'<b>2.</b> The adapter is plugged into a projector USB port and its LED is lit.<br>'
-      +'<b>3.</b> TX and RX are crossed — the adapter\'s transmit goes to the ESP32\'s '
-      +'receive. With a MAX3232 there are two places to get this wrong.<br>'
-      +'<b>4.</b> The chip binds at all — FTDI does, CP2102 and CH340 do not.'
+      +'0 bytes in.<br><br>'
+      +'<b>Unplug the adapter from the projector and plug it back in.</b> That fixes '
+      +'it. The projector is the USB host, and after it power-cycles it can fail to '
+      +'re-enumerate the adapter — leaving it powered but unbound, passing nothing. '
+      +'Only a physical re-attach makes the host bind it again; nothing this bridge '
+      +'can send will.<br><br>'
+      +'If that does not fix it: check <b>Settings → General → Serial Port Control = '
+      +'ON</b> on the projector (a factory reset turns it off), that the adapter\'s '
+      +'LED is lit, and that TX/RX are crossed. Run the self-test at '
+      +'<code>/api/selftest</code> — if it passes, the fault is not in this bridge.'
     : (quiet ? 'Serial is quiet — normal while the projector is off, since its USB '
               +'port powers the adapter. Commands are still sent.' : '');
 }

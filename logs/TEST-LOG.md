@@ -929,3 +929,21 @@ The firmware is **proven innocent**: loopback passes, config unchanged
 (GPIO17/18, 115200), transmission confirmed. The projector is powered. The fault
 is in the physical path — adapter, cabling, or whether the projector is binding
 the adapter at all. No firmware change can reach it.
+
+### 2026-09-11 — resolved: physical re-plug restored it
+
+Operator unplugged the adapter from the projector and plugged it back in.
+Immediately healthy:
+
+```
+linkalive = True
+tx / rx   = 2 / 96
+lastrx    = 2A 2A 03 13 01 00 17    real temperature status
+```
+
+**Root cause: the projector's USB host had lost its binding to the adapter** and
+only a physical re-attach makes it re-enumerate. Nothing in this firmware could
+cause or fix it — the UART self-test passed throughout. See R-0005.
+
+The app now leads with that remedy when it detects the state (transmitting, zero
+bytes back), instead of listing things to check.
